@@ -25,14 +25,17 @@ The Vite dev server proxies `/api` to `localhost:8080`, so both run side by side
 make dev-reset   # wipe Docker volumes, SQLite db, and library files (clean slate)
 ```
 
-### Staging
+### Preview (nightly)
 
-Test the production build locally before deploying — runs the real compiled image with the full stack:
+Run the latest nightly image with the full stack
 
 ```sh
-make staging-up    # build image (frontend embedded) + start Redpanda + MinIO
-make staging-down  # tear everything down and wipe volumes
+cp .env.example .env   # fill in your values once
+make staging-up        # pulls ghcr.io/dimasbaguspm/manhes:nightly + starts Redpanda + MinIO
+make staging-down      # tear everything down and wipe volumes
 ```
+
+`infra/docker-compose.prod.yml` uses the `nightly` image by default, so this is always up to date with the latest main-branch build.
 
 ### Production
 
@@ -43,6 +46,33 @@ make prod-build  # → bin/manhes
 ```
 
 No infra included — wire up Redpanda, MinIO, and a reverse proxy however you prefer. The binary serves the React SPA at `/` and the REST API at `/api/v1/`.
+
+#### Pinning to a stable release
+
+Images are published to the GitHub Container Registry on every release:
+
+```
+ghcr.io/dimasbaguspm/manhes:latest       # latest stable release
+ghcr.io/dimasbaguspm/manhes:v1.2.3       # pinned version
+ghcr.io/dimasbaguspm/manhes:nightly      # nightly build from main
+```
+
+To pin to a specific version, create an override file next to `docker-compose.prod.yml`:
+
+```yaml
+# docker-compose.override.yml
+services:
+  manhes:
+    image: ghcr.io/dimasbaguspm/manhes:latest
+```
+
+Then bring it up:
+
+```sh
+docker compose -f infra/docker-compose.prod.yml -f docker-compose.override.yml --env-file .env up -d
+```
+
+All configuration is provided via `.env` — see the [Configuration](#configuration) table below. The container exposes port `8080`; put a reverse proxy in front of it as needed.
 
 ### Utilities
 

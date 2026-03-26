@@ -57,9 +57,7 @@ services:
       start_period: 10s
 
   manhes:
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: ghcr.io/dimasbaguspm/manhes:nightly
     ports:
       - "8080:8080"
     restart: unless-stopped
