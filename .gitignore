@@ -1,0 +1,11 @@
+bin/
+tmp/
+library/
+*.db
+*.db*
+.env
+node_modules
+dist
+*.tsbuildinfo
+# Keep the embed placeholder — the rest of internal/ui/dist/ is generated
+!internal/ui/dist/index.html

@@ -1,0 +1,32 @@
+#:schema https://json.schemastore.org/any.json
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  pre_cmd = ["make swagger"]
+  cmd     = "go build -buildvcs=false -o ./tmp/manhes ./cmd/manhes"
+  bin     = "./tmp/manhes"
+  delay    = 1000
+  exclude_dir   = ["tmp", "vendor", "library", "docs", "bin"]
+  include_ext   = ["go", "yaml", "toml"]
+  exclude_regex = ["_test\\.go"]
+  kill_delay    = "200ms"
+  send_interrupt = true
+  stop_on_error  = true
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
+
+[color]
+  build  = "yellow"
+  runner = "green"
+  watcher = "cyan"
+  app    = ""
+
+[screen]
+  clear_on_rebuild = true
+  keep_scroll      = true

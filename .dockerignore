@@ -1,0 +1,28 @@
+# Git
+.git
+
+# Frontend dependencies and dev output (rebuilt in Docker)
+web/node_modules/
+web/dist/
+
+# Local embed placeholder (overwritten by Docker build)
+internal/ui/dist/
+
+# Go build artifacts
+bin/
+tmp/
+manhes
+
+# Runtime data
+*.db
+*.db*
+library/
+
+# Environment (inject at runtime)
+.env
+.env.*
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

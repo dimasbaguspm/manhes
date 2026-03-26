@@ -1,0 +1,439 @@
+basePath: /api/v1
+consumes:
+- application/json
+definitions:
+  domain.ChapterItem:
+    properties:
+      chapter:
+        type: number
+      page_count:
+        type: integer
+      uploaded_at:
+        type: string
+    type: object
+  domain.ChapterListResponse:
+    properties:
+      chapters:
+        items:
+          $ref: '#/definitions/domain.ChapterItem'
+        type: array
+      id:
+        type: string
+      lang:
+        type: string
+    type: object
+  domain.ChapterReadResponse:
+    properties:
+      chapter:
+        type: number
+      id:
+        type: string
+      lang:
+        type: string
+      next_chapter:
+        type: string
+      pages:
+        items:
+          type: string
+        type: array
+      prev_chapter:
+        type: string
+    type: object
+  domain.DictionaryResponse:
+    properties:
+      best_source:
+        additionalProperties:
+          type: string
+        type: object
+      chapters_by_lang:
+        additionalProperties:
+          type: integer
+        type: object
+      cover_url:
+        type: string
+      id:
+        type: string
+      refreshed_at:
+        type: string
+      slug:
+        type: string
+      source_stats:
+        additionalProperties:
+          $ref: '#/definitions/domain.SourceStat'
+        type: object
+      sources:
+        additionalProperties:
+          type: string
+        type: object
+      state:
+        type: string
+      title:
+        type: string
+    type: object
+  domain.MangaDetailResponse:
+    properties:
+      authors:
+        items:
+          type: string
+        type: array
+      cover_url:
+        type: string
+      description:
+        type: string
+      genres:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      languages:
+        items:
+          $ref: '#/definitions/domain.MangaLangResponse'
+        type: array
+      sources:
+        additionalProperties:
+          type: string
+        type: object
+      state:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  domain.MangaLangResponse:
+    properties:
+      fetched_chapters:
+        type: integer
+      lang:
+        type: string
+      latest_update:
+        type: string
+      total_chapters:
+        type: integer
+      uploaded_chapters:
+        type: integer
+    type: object
+  domain.MangaListResponse:
+    properties:
+      itemCount:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/domain.MangaSummary'
+        type: array
+      pageNumber:
+        type: integer
+      pageSize:
+        type: integer
+      pageTotal:
+        type: integer
+    type: object
+  domain.MangaSummary:
+    properties:
+      authors:
+        items:
+          type: string
+        type: array
+      chapters_by_lang:
+        additionalProperties:
+          type: integer
+        type: object
+      cover_url:
+        type: string
+      description:
+        type: string
+      genres:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      languages:
+        items:
+          type: string
+        type: array
+      state:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  domain.SourceStat:
+    properties:
+      chapters_by_lang:
+        additionalProperties:
+          type: integer
+        type: object
+      err:
+        type: string
+      fetched_at:
+        type: string
+    type: object
+  handler.watchlistRequest:
+    properties:
+      dictionaryId:
+        type: string
+    type: object
+  httputil.ErrorResponse:
+    properties:
+      code:
+        type: string
+      details:
+        items:
+          type: string
+        type: array
+      message:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: Manga ingestion and catalog API.
+  title: Manhes API
+  version: "2.0"
+paths:
+  /dictionary:
+    get:
+      description: Results are permanently stored in the dictionary. Re-searching
+        a known
+      parameters:
+      - description: Search query
+        in: query
+        name: q
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.DictionaryResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: Search all scrapers and auto-upsert results into dictionary
+      tags:
+      - dictionary
+  /dictionary/{dictionaryId}:
+    post:
+      description: Re-fetches source stats from all known scrapers and searches
+      parameters:
+      - description: Dictionary entry ID
+        in: path
+        name: dictionaryId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.DictionaryResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: Refresh a dictionary entry
+      tags:
+      - dictionary
+  /manga:
+    get:
+      description: Returns a paginated list of manga from the dictionary (all states).
+        Supports filtering by title, status, state, lastUpdate and sorting.
+      parameters:
+      - description: Filter by title (partial match)
+        in: query
+        name: title
+        type: string
+      - description: Filter by status (ongoing|completed|hiatus)
+        in: query
+        name: status
+        type: string
+      - description: Filter by state (unavailable|fetching|available)
+        in: query
+        name: state
+        type: string
+      - description: 'Sort field: title (default) or last_update'
+        in: query
+        name: sortBy
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.MangaListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: List manga
+      tags:
+      - manga
+  /manga/{mangaId}:
+    get:
+      description: mangaId is the dictionary entry UUID. Unavailable/fetching manga
+        return partial detail.
+      parameters:
+      - description: Dictionary entry UUID
+        in: path
+        name: mangaId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.MangaDetailResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: Get manga detail
+      tags:
+      - manga
+  /manga/{mangaId}/{lang}:
+    get:
+      description: Returns all uploaded chapters for a specific language. Requires
+        manga to be in available state.
+      parameters:
+      - description: Dictionary entry UUID
+        in: path
+        name: mangaId
+        required: true
+        type: string
+      - description: Language code (e.g. en, fr)
+        in: path
+        name: lang
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.ChapterListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: List uploaded chapters for a language
+      tags:
+      - manga
+  /manga/{mangaId}/{lang}/read:
+    get:
+      description: Returns page URLs for the requested chapter along with prev/next
+        navigation links. Requires manga to be in available state.
+      parameters:
+      - description: Dictionary entry UUID
+        in: path
+        name: mangaId
+        required: true
+        type: string
+      - description: Language code (e.g. en, fr)
+        in: path
+        name: lang
+        required: true
+        type: string
+      - description: Chapter number
+        in: query
+        name: chapter
+        required: true
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.ChapterReadResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: Get chapter pages
+      tags:
+      - manga
+  /watchlist:
+    post:
+      consumes:
+      - application/json
+      description: Accepts a dictionary entry ID, saves the watchlist entry, sets
+        dictionary state to fetching, and publishes an IngestRequested event. Returns
+        202 immediately.
+      parameters:
+      - description: Watchlist entry
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.watchlistRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: Register manga for ingestion
+      tags:
+      - watchlist
+produces:
+- application/json
+swagger: "2.0"
