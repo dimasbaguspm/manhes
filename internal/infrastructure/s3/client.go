@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -58,6 +59,10 @@ func (c *Client) publicBase() string {
 	pub := c.cfg.PublicEndpoint
 	if pub == "" {
 		pub = c.cfg.Endpoint
+	}
+
+	if strings.HasPrefix(pub, "http://") || strings.HasPrefix(pub, "https://") {
+		return strings.TrimRight(pub, "/")
 	}
 	scheme := "http"
 	if c.cfg.UseSSL {
