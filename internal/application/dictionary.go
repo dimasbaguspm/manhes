@@ -13,7 +13,6 @@ import (
 
 var _ domain.DictionaryManager = (*DictionaryService)(nil)
 
-// DictionaryConfig holds configuration for DictionaryService.
 type DictionaryConfig struct {
 	RefreshInterval time.Duration
 }
@@ -156,18 +155,19 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 
 func (s *DictionaryService) Upsert(ctx context.Context, slug, title string, sources map[string]string) (domain.DictionaryEntry, error) {
 	entry := domain.DictionaryEntry{
-		ID:          uuid.New().String(), // used only on INSERT; ignored by ON CONFLICT
+		ID:          uuid.New().String(),
 		Slug:        slug,
 		Title:       title,
 		Sources:     sources,
-		SourceStats: map[string]domain.SourceStat{}, // empty → SQL keeps existing stats
-		BestSource:  map[string]string{},            // empty → SQL keeps existing best
+		SourceStats: map[string]domain.SourceStat{},
+		BestSource:  map[string]string{},
 		State:       domain.StateUnavailable,
 		CreatedAt:   time.Now(),
 	}
 	if err := s.repo.UpsertDictionary(entry); err != nil {
 		return domain.DictionaryEntry{}, err
 	}
+
 	// Read back to get canonical entry: actual ID, merged sources, preserved state/stats.
 	result, found, err := s.repo.GetDictionaryBySlug(slug)
 	if err != nil {
@@ -179,4 +179,3 @@ func (s *DictionaryService) Upsert(ctx context.Context, slug, title string, sour
 	go s.refresh(context.Background(), result.ID)
 	return result, nil
 }
-

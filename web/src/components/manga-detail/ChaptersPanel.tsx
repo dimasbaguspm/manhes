@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { useMangaChapters } from '../../providers/MangaChaptersProvider'
 import { DEEP_LINKS } from '../../lib/deepLinks'
+import { useMangaChapters } from '../../providers/MangaChaptersProvider'
 import { BookmarkIcon } from '../reader/Icons'
 import { NoResults } from './NoResults'
 
@@ -68,7 +68,7 @@ export function ChaptersPanel({
 
               <div className="flex min-w-0 items-center gap-2">
                 <span className={`font-medium ${isLatest ? 'text-indigo-300' : 'text-gray-100'}`}>
-                  Chapter {chStr}
+                  {chStr}
                 </span>
                 {isLatest && (
                   <span className="shrink-0 rounded-full bg-indigo-900 px-2 py-0.5 text-xs text-indigo-300">

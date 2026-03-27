@@ -18,8 +18,8 @@ import (
 
 	"manga-engine/config"
 	"manga-engine/internal/application"
-	"manga-engine/internal/infrastructure/downloader"
 	"manga-engine/internal/handler"
+	"manga-engine/internal/infrastructure/downloader"
 	"manga-engine/internal/infrastructure/messaging"
 	"manga-engine/internal/infrastructure/persistence"
 	"manga-engine/internal/infrastructure/s3"

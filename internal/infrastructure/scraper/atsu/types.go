@@ -18,16 +18,18 @@ type mangaPageResp struct {
 	} `json:"mangaPage"`
 }
 
+type chapterItem struct {
+	ID                string  `json:"id"`
+	ScanlationMangaID string  `json:"scanlationMangaId"`
+	Title             string  `json:"title"`
+	Number            float64 `json:"number"`
+	CreatedAt         int64   `json:"createdAt"`
+	Index             int     `json:"index"`
+	PageCount         int     `json:"pageCount"`
+}
+
 type allChaptersResp struct {
-	Chapters []struct {
-		ID                string  `json:"id"`
-		ScanlationMangaID string  `json:"scanlationMangaId"`
-		Title             string  `json:"title"`
-		Number            float64 `json:"number"`
-		CreatedAt         int64   `json:"createdAt"`
-		Index             int     `json:"index"`
-		PageCount         int     `json:"pageCount"`
-	} `json:"chapters"`
+	Chapters []chapterItem `json:"chapters"`
 }
 
 type readChapterResp struct {
