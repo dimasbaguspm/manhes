@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useMangaReader } from '../providers/MangaReaderDataProvider'
 import { usePageAnchor, type CanvasPageLayout } from '../hooks/usePageAnchor'
@@ -39,6 +39,29 @@ function ReaderContent() {
   useEffect(() => {
     setPageLayout(null)
   }, [chapter])
+
+  // Persist reading progress (%) to localStorage when chapter changes or on unmount.
+  // We use a ref so the cleanup closure always captures the latest scrollPct
+  // without needing it in the effect dependency array (which would re-register
+  // the cleanup on every scroll event).
+  const scrollPctSaveRef = useRef(scrollPct)
+  useEffect(() => { scrollPctSaveRef.current = scrollPct })
+
+  const saveProgress = useCallback(() => {
+    if (!mangaId || !lang || !chapter) return
+    try {
+      const raw = localStorage.getItem('manhes_read_progress')
+      const prev = (raw ? JSON.parse(raw) : {}) as Record<string, number>
+      localStorage.setItem('manhes_read_progress', JSON.stringify({
+        ...prev,
+        [`${mangaId}/${lang}/${chapter}`]: scrollPctSaveRef.current,
+      }))
+    } catch {}
+  }, [mangaId, lang, chapter])
+
+  useEffect(() => {
+    return () => { saveProgress() }
+  }, [saveProgress])
 
   // Double-tap-hold opens settings.
   useEffect(() => {

@@ -1,22 +1,72 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMangaDetail } from '../providers/MangaDetailProvider'
+import { MangaChaptersProvider } from '../providers/MangaChaptersProvider'
 import { DEEP_LINKS } from '../lib/deepLinks'
-import { formatDate, DateFormat } from '../lib/formatDate'
-
-const STATUS_COLORS: Record<string, string> = {
-  ongoing: 'bg-green-900 text-green-300',
-  completed: 'bg-blue-900 text-blue-300',
-  hiatus: 'bg-yellow-900 text-yellow-300',
-}
+import { usePersistedState } from '../hooks/usePersistedState'
+import { CoverImage } from '../components/manga-detail/CoverImage'
+import { MangaDetailHeader } from '../components/manga-detail/Header'
+import { StatusBadge, StateBadge, GenreBadge } from '../components/manga-detail/Badge'
+import { LangTabs } from '../components/manga-detail/LangTabs'
+import { LangProgressBar } from '../components/manga-detail/ProgressBar'
+import { ChaptersPanel } from '../components/manga-detail/ChaptersPanel'
+import { NoResults } from '../components/manga-detail/NoResults'
+import { ActionButtons } from '../components/manga-detail/ActionButtons'
 
 export default function MangaPage() {
   const { data, loading, error, addState, addToWatchlist, refreshState, refreshManga } = useMangaDetail()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const resolvedLang = searchParams.get('tab') ?? (data?.languages[0]?.lang ?? null)
+  const mangaId = data?.id ?? ''
+
+  const [favorites, setFavorites] = usePersistedState<Record<string, true>>({
+    key: 'manhes_favorites',
+    fallback: {},
+  })
+  const [bookmarks, setBookmarks] = usePersistedState<Record<string, true>>({
+    key: 'manhes_bookmarks',
+    fallback: {},
+  })
+  const [latestRead, setLatestRead] = usePersistedState<Record<string, string>>({
+    key: 'manhes_latest_read',
+    fallback: {},
+  })
+  const [readProgress] = usePersistedState<Record<string, number>>({
+    key: 'manhes_read_progress',
+    fallback: {},
+  })
+
+  const isFavorite = mangaId ? !!favorites[mangaId] : false
+
+  function toggleFavorite() {
+    if (!mangaId) return
+    setFavorites(prev => {
+      const { [mangaId]: _, ...rest } = prev
+      return _ !== undefined ? (rest as Record<string, true>) : { ...prev, [mangaId]: true }
+    })
+  }
+
+  function toggleBookmark(lang: string, chapter: string) {
+    const key = `${mangaId}/${lang}/${chapter}`
+    setBookmarks(prev => {
+      const { [key]: _, ...rest } = prev
+      return _ !== undefined ? (rest as Record<string, true>) : { ...prev, [key]: true }
+    })
+  }
+
+  function markRead(lang: string, chapter: string) {
+    setLatestRead(prev => ({ ...prev, [`${mangaId}/${lang}`]: chapter }))
+  }
+
+  function selectLang(lang: string) {
+    setSearchParams({ tab: lang }, { replace: true })
+  }
 
   if (loading) {
     return (
       <div className="animate-pulse">
-        <div className="flex gap-6">
-          <div className="h-64 w-44 flex-shrink-0 rounded-lg bg-gray-800" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+          <div className="mx-auto h-56 w-36 flex-shrink-0 rounded-lg bg-gray-800 sm:mx-0 sm:h-64 sm:w-44" />
           <div className="flex-1 space-y-3">
             <div className="h-7 w-2/3 rounded bg-gray-800" />
             <div className="h-4 w-1/3 rounded bg-gray-800" />
@@ -27,15 +77,10 @@ export default function MangaPage() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">
-        {error}
-      </div>
-    )
-  }
-
+  if (error) return <NoResults message={error} error />
   if (!data) return null
+
+  const activeLangInfo = resolvedLang ? data.languages.find(l => l.lang === resolvedLang) : null
 
   return (
     <div>
@@ -45,38 +90,22 @@ export default function MangaPage() {
         <span className="text-gray-300">{data.title}</span>
       </div>
 
-      <div className="flex gap-6">
-        <div className="h-64 w-44 flex-shrink-0 overflow-hidden rounded-lg bg-gray-800">
-          {data.coverUrl ? (
-            <img src={data.coverUrl} alt={data.title} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center">
-              <svg className="h-10 w-10 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
-                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                />
-              </svg>
-              <p className="text-xs leading-snug text-gray-600">
-                Cover on the way — please be patient
-              </p>
-            </div>
-          )}
-        </div>
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
+        <CoverImage src={data.coverUrl} alt={data.title} />
 
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-gray-100">{data.title}</h1>
-          {data.authors.length > 0 && (
-            <p className="mt-1 text-sm text-gray-400">{data.authors.join(', ')}</p>
-          )}
+        <div className="w-full min-w-0 flex-1 text-center sm:text-left">
+          <MangaDetailHeader
+            title={data.title}
+            authors={data.authors}
+            isFavorite={isFavorite}
+            onToggleFavorite={toggleFavorite}
+          />
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_COLORS[data.status] ?? 'bg-gray-800 text-gray-400'}`}>
-              {data.status}
-            </span>
-            {data.genres.slice(0, 6).map(g => (
-              <span key={g} className="rounded-full bg-gray-800 px-2.5 py-1 text-xs text-gray-400">
-                {g}
-              </span>
+          <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+            <StatusBadge status={data.status} />
+            <StateBadge state={data.state} />
+            {data.genres.slice(0, 5).map(g => (
+              <GenreBadge key={g} genre={g} />
             ))}
           </div>
 
@@ -86,101 +115,66 @@ export default function MangaPage() {
             </p>
           )}
 
-          {data.state === 'unavailable' && (
-            <button
-              onClick={addToWatchlist}
-              disabled={addState !== 'idle'}
-              className={`mt-4 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                addState === 'error' ? 'cursor-default bg-red-900 text-red-300'
-                : addState === 'loading' ? 'cursor-wait bg-gray-700 text-gray-400'
-                : 'bg-indigo-600 text-white hover:bg-indigo-500'
-              }`}
-            >
-              {addState === 'error' ? 'Failed to add'
-                : addState === 'loading' ? 'Adding…'
-                : '+ Add to Library'}
-            </button>
-          )}
-
-          {data.state !== 'unavailable' && (
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                onClick={refreshManga}
-                disabled={refreshState === 'loading' || refreshState === 'done'}
-                className={`rounded-lg border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  refreshState === 'error' ? 'border-red-700 bg-red-900 text-red-300'
-                  : refreshState === 'done' ? 'border-gray-700 bg-gray-800 text-gray-400'
-                  : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-500 hover:text-white'
-                }`}
-              >
-                {refreshState === 'loading' ? 'Refreshing…'
-                  : refreshState === 'error' ? 'Refresh failed'
-                  : refreshState === 'done' ? 'Queued'
-                  : 'Refresh'}
-              </button>
-              {data.updatedAt && (
-                <span className="text-xs text-gray-500">
-                  Updated {formatDate(data.updatedAt, DateFormat.ShortDateTime)}
-                </span>
-              )}
-            </div>
-          )}
+          <ActionButtons
+            state={data.state}
+            addState={addState}
+            onAddToWatchlist={addToWatchlist}
+            refreshState={refreshState}
+            onRefresh={refreshManga}
+            updatedAt={data.updatedAt}
+          />
         </div>
       </div>
 
+      {/* Language tabs + chapters */}
       {data.state !== 'unavailable' && (
         <div className="mt-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">
-            Available Languages
-          </h2>
-          {data.languages.length > 0 ? (
-            <div className="flex flex-wrap gap-3">
-              {data.languages.map(({ lang, latestUpdate, totalChapters, fetchedChapters, uploadedChapters }) => (
-                <Link
-                  key={lang}
-                  to={DEEP_LINKS.MANGA_CHAPTERS({ mangaId: data.id, lang })}
-                  className="flex min-w-48 flex-col gap-2 rounded-lg border border-gray-700 bg-gray-900 px-4 py-3 transition hover:border-gray-500"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="font-medium uppercase text-gray-100">{lang}</span>
-                    <span className="text-xs text-gray-500">
-                      {latestUpdate ? new Date(latestUpdate).toLocaleDateString() : '—'}
-                    </span>
-                  </div>
-                  {totalChapters > 0 && (
-                    <div className="space-y-1">
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
-                        <div className="flex h-full">
-                          <div
-                            className="h-full bg-indigo-500 transition-all"
-                            style={{ width: `${Math.round((uploadedChapters / totalChapters) * 100)}%` }}
-                          />
-                          <div
-                            className="h-full bg-yellow-700 transition-all"
-                            style={{ width: `${Math.round(((fetchedChapters - uploadedChapters) / totalChapters) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-500">
-                        <span>
-                          <span className="text-indigo-400">{uploadedChapters}</span>
-                          {fetchedChapters > uploadedChapters && (
-                            <span className="text-yellow-600"> +{fetchedChapters - uploadedChapters} fetching</span>
-                          )}
-                          <span> / {totalChapters}</span>
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </Link>
-              ))}
-            </div>
+          {data.languages.length === 0 ? (
+            <NoResults
+              message={
+                data.state === 'fetching'
+                  ? 'Chapters are being fetched — please check back soon.'
+                  : 'No chapters available yet.'
+              }
+            />
           ) : (
-            <div className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-6 text-center text-gray-500">
-              {data.state === 'fetching'
-                ? 'Chapters are being fetched — please check back soon.'
-                : 'No chapters available yet.'}
-            </div>
+            <>
+              <LangTabs
+                langs={data.languages}
+                activeLang={resolvedLang}
+                onSelect={selectLang}
+              />
+
+              {activeLangInfo && (
+                <LangProgressBar
+                  totalChapters={activeLangInfo.totalChapters}
+                  fetchedChapters={activeLangInfo.fetchedChapters}
+                  uploadedChapters={activeLangInfo.uploadedChapters}
+                />
+              )}
+
+              {resolvedLang && (
+                <MangaChaptersProvider
+                  key={`${mangaId}/${resolvedLang}`}
+                  mangaId={mangaId}
+                  lang={resolvedLang}
+                >
+                  <ChaptersPanel
+                    mangaId={mangaId}
+                    lang={resolvedLang}
+                    bookmarkedSet={new Set(
+                      Object.keys(bookmarks)
+                        .filter(k => k.startsWith(`${mangaId}/${resolvedLang}/`))
+                        .map(k => k.split('/')[2]),
+                    )}
+                    latestRead={latestRead[`${mangaId}/${resolvedLang}`]}
+                    getProgress={chapter => readProgress[`${mangaId}/${resolvedLang}/${chapter}`]}
+                    onToggleBookmark={chapter => toggleBookmark(resolvedLang, chapter)}
+                    onChapterClick={chapter => markRead(resolvedLang, chapter)}
+                  />
+                </MangaChaptersProvider>
+              )}
+            </>
           )}
         </div>
       )}
