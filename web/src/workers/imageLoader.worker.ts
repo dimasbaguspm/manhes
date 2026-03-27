@@ -3,7 +3,7 @@
 export type WorkerInMessage = { urls: string[] }
 
 export type WorkerOutMessage =
-  | { type: 'page'; index: number; bitmap: ImageBitmap }
+  | { type: 'page'; index: number; buffer: ArrayBuffer; mime: string }
   | { type: 'progress'; loaded: number; total: number }
   | { type: 'error'; index: number; message: string }
   | { type: 'done' }
@@ -18,11 +18,11 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
       try {
         const res = await fetch(url)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const blob = await res.blob()
-        const bitmap = await createImageBitmap(blob)
+        const mime = res.headers.get('content-type') || 'image/jpeg'
+        const buffer = await res.arrayBuffer()
         loaded++
-        // Transfer ownership (zero-copy) — bitmap is no longer usable in the worker after this.
-        self.postMessage({ type: 'page', index, bitmap } satisfies WorkerOutMessage, [bitmap])
+        // Transfer ownership (zero-copy) — buffer is detached in the worker after this.
+        self.postMessage({ type: 'page', index, buffer, mime } satisfies WorkerOutMessage, [buffer])
         self.postMessage({ type: 'progress', loaded, total } satisfies WorkerOutMessage)
       } catch (err) {
         loaded++

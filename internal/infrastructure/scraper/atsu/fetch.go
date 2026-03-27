@@ -61,6 +61,11 @@ func (a *Adapter) FetchChapterList(ctx context.Context, mangaID string) ([]domai
 			break
 		}
 	}
+	// wasExpanded tracks whether we fetched chapters through session/scanlation
+	// sub-IDs. When true, ScanlationMangaID distinguishes chapters from different
+	// sessions and must be part of the dedup key. When false (direct chapters),
+	// dedup by sort key alone to avoid duplicates when ScanlationMangaID varies.
+	wasExpanded := false
 	if allZeroPages {
 		var expanded []rawChapterEntry
 		for _, container := range raw {
@@ -71,6 +76,7 @@ func (a *Adapter) FetchChapterList(ctx context.Context, mangaID string) ([]domai
 			expanded = append(expanded, sub...)
 		}
 		raw = expanded
+		wasExpanded = true
 	} else {
 		subIDs := make(map[string]struct{})
 		for _, ch := range raw {
@@ -88,6 +94,7 @@ func (a *Adapter) FetchChapterList(ctx context.Context, mangaID string) ([]domai
 				expanded = append(expanded, sub...)
 			}
 			raw = expanded
+			wasExpanded = true
 		}
 	}
 
@@ -138,7 +145,16 @@ func (a *Adapter) FetchChapterList(ctx context.Context, mangaID string) ([]domai
 	var chapters []domain.Chapter
 	for _, ch := range raw {
 		sortKey := resolveNumber(ch)
-		key := dedupKey{ch.ScanlationMangaID, sortKey}
+		// For expanded (session) manga, ScanlationMangaID distinguishes chapters
+		// from different scanlation groups — include it so same-numbered chapters
+		// from different sessions are kept. For direct (no-session) manga, dedup
+		// by sort key alone; including ScanlationMangaID would let the same chapter
+		// slip through when different sub-IDs are present.
+		sessionID := ""
+		if wasExpanded {
+			sessionID = ch.ScanlationMangaID
+		}
+		key := dedupKey{sessionID, sortKey}
 		if _, ok := seen[key]; ok {
 			continue
 		}

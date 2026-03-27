@@ -75,11 +75,11 @@ export function formatChapterList(raw: DomainChapterListResponse): AppChapterLis
   }
 }
 
-function parseChapterFromUrl(url: string | null | undefined): number | null {
+function parseChapterFromUrl(url: string | null | undefined): string | null {
   if (!url) return null
   try {
     const ch = new URL(url, 'http://x').searchParams.get('chapter')
-    return ch !== null ? parseFloat(ch) : null
+    return ch !== null ? ch : null
   } catch {
     return null
   }

@@ -53,8 +53,8 @@ export interface AppChapterRead {
   lang: string
   chapter: string
   pages: string[]
-  prevChapter: number | null
-  nextChapter: number | null
+  prevChapter: string | null
+  nextChapter: string | null
 }
 
 export interface AppDictionaryEntry {

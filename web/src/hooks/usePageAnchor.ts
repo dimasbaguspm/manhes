@@ -34,7 +34,7 @@ export function usePageAnchor(
   data: AppChapterRead | null,
   mangaId: string | undefined,
   chapter: string,
-  canvasRef: RefObject<HTMLCanvasElement> | null,
+  containerRef: RefObject<HTMLElement> | null,
   pageLayout: CanvasPageLayout[] | null,
 ): OverlayState {
   const [overlay, setOverlay] = useState<OverlayState>(() =>
@@ -48,7 +48,7 @@ export function usePageAnchor(
 
   // ── 1. Restore ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!data || !mangaId || !canvasRef?.current || !pageLayout) return
+    if (!data || !mangaId || !containerRef?.current || !pageLayout) return
     const raw = window.location.hash.slice(1)
     if (!raw) { dismissOverlay(); return }
 
@@ -61,12 +61,12 @@ export function usePageAnchor(
 
     if (pageIdx !== -1 && pageLayout[pageIdx]) {
       const t = setTimeout(() => {
-        const canvas = canvasRef.current
-        if (!canvas) { dismissOverlay(); return }
-        const scale = canvas.width > 0 ? canvas.offsetWidth / canvas.width : 1
-        const canvasTop = canvas.getBoundingClientRect().top + window.scrollY
+        const container = containerRef.current
+        if (!container) { dismissOverlay(); return }
+        // pageLayout is in CSS pixels — no canvas-pixel scale conversion needed.
+        const containerTop = container.getBoundingClientRect().top + window.scrollY
         const pg = pageLayout[pageIdx]
-        const target = canvasTop + (pg.top + pg.height * offset) * scale - window.innerHeight / 2
+        const target = containerTop + pg.top + pg.height * offset - window.innerHeight / 2
         window.scrollTo({ top: Math.max(0, target) })
         dismissOverlay()
       }, 80)
@@ -75,13 +75,13 @@ export function usePageAnchor(
       dismissOverlay()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, canvasRef, pageLayout])
+  }, [data, containerRef, pageLayout])
 
   // ── 2. Track ──────────────────────────────────────────────────────────────
   // Chrome throttles history.replaceState after ~100 calls/30 s (≈3.3/s).
   // throttle() caps writes at 2/s (500 ms) — well under the limit.
   useEffect(() => {
-    if (!data || !mangaId || !canvasRef?.current || !pageLayout) return
+    if (!data || !mangaId || !containerRef?.current || !pageLayout) return
 
     let rafId: number
     const writeHash = throttle(
@@ -90,16 +90,16 @@ export function usePageAnchor(
     )
 
     function update() {
-      const canvas = canvasRef!.current
-      if (!canvas || !pageLayout) return
-      const scale = canvas.width > 0 ? canvas.offsetWidth / canvas.width : 1
-      const canvasTop = canvas.getBoundingClientRect().top + window.scrollY
+      const container = containerRef!.current
+      if (!container || !pageLayout) return
+      // pageLayout is in CSS pixels — no canvas-pixel scale conversion needed.
+      const containerTop = container.getBoundingClientRect().top + window.scrollY
       const viewCenter = window.scrollY + window.innerHeight / 2
 
       for (let i = 0; i < pageLayout.length; i++) {
         const pg = pageLayout[i]
-        const top = canvasTop + pg.top * scale
-        const height = pg.height * scale
+        const top = containerTop + pg.top
+        const height = pg.height
         if (height > 0 && viewCenter >= top && viewCenter < top + height) {
           const offsetMilli = Math.round(((viewCenter - top) / height) * 1000)
           writeHash(`#${pageAnchor(mangaId!, chapter, i + 1)}.${offsetMilli}`)
@@ -121,7 +121,7 @@ export function usePageAnchor(
       cancelAnimationFrame(rafId)
       history.replaceState(null, '', location.pathname + location.search)
     }
-  }, [data, mangaId, chapter, canvasRef, pageLayout])
+  }, [data, mangaId, chapter, containerRef, pageLayout])
 
   return overlay
 }

@@ -36,7 +36,7 @@ function ReaderContent() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const [pageLayout, setPageLayout] = useState<CanvasPageLayout[] | null>(null)
 
   // ── Canvas loading overlay ─────────────────────────────────────────────────
@@ -117,7 +117,7 @@ function ReaderContent() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const scrollRestoreOverlay = usePageAnchor(data, mangaId, chapter, canvasRef, pageLayout)
+  const scrollRestoreOverlay = usePageAnchor(data, mangaId, chapter, containerRef, pageLayout)
 
   useAutoScroll(
     settings.autoScroll,
@@ -207,7 +207,7 @@ function ReaderContent() {
           <ReaderCanvas
             key={chapter}
             urls={data.pages}
-            canvasRef={canvasRef}
+            containerRef={containerRef}
             onLayout={setPageLayout}
             onLoadingState={handleCanvasLoadingState}
           />

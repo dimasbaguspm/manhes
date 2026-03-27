@@ -10,48 +10,90 @@ export interface CanvasLoadingInfo {
 
 interface ReaderCanvasProps {
   urls: string[]
-  /** Forwarded ref — the parent holds this so anchor tracking can read canvas geometry. */
-  canvasRef: RefObject<HTMLCanvasElement>
+  /** Forwarded ref — the parent holds this so anchor tracking can read container geometry. */
+  containerRef: RefObject<HTMLDivElement>
   onLayout: (layout: CanvasPageLayout[]) => void
   /**
    * Called whenever loading state changes. Parent is responsible for showing
-   * a loading overlay; this component only renders the canvas and inline errors.
+   * a loading overlay; this component only renders the pages and inline errors.
    */
   onLoadingState?: (info: CanvasLoadingInfo) => void
 }
 
 /**
- * Loads all page images off the main thread via a Web Worker, then stitches
- * them into a single canvas. The worker fetches and decodes each image as an
- * ImageBitmap, transferring ownership back to the main thread so the CPU-heavy
- * decode never blocks the UI.
+ * Loads all page images off the main thread via a Web Worker, then renders
+ * each page as a native <img> element.
  *
- * Loading progress and state are reported upward via onLoadingState — the
- * parent owns the loading overlay so it can position it anywhere in the tree.
+ * The worker fetches each URL and transfers the raw ArrayBuffer (zero-copy)
+ * back to the main thread. The main thread creates a blob URL for each buffer
+ * and sets it as the img src. Native <img> rendering preserves full source
+ * resolution with proper HiDPI support — no canvas scaling artifacts.
  *
- * Drawing remains lazy: the first few pages are painted immediately, the rest
- * are painted on demand as the user scrolls near them.
+ * Loading progress and state are reported upward via onLoadingState.
  */
-export function ReaderCanvas({ urls, canvasRef, onLayout, onLoadingState }: ReaderCanvasProps) {
+export function ReaderCanvas({ urls, containerRef, onLayout, onLoadingState }: ReaderCanvasProps) {
+  const [pageUrls, setPageUrls] = useState<(string | null)[]>(() => new Array(urls.length).fill(null))
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  // Always-fresh ref so the worker handler never uses a stale callback.
+  // Always-fresh refs so callbacks never use stale values.
   const onLoadingStateRef = useRef(onLoadingState)
   useEffect(() => { onLoadingStateRef.current = onLoadingState })
 
+  const onLayoutRef = useRef(onLayout)
+  useEffect(() => { onLayoutRef.current = onLayout })
+
+  // Per-page img element refs — populated by React during commit.
+  const imgRefs = useRef<(HTMLImageElement | null)[]>([])
+
+  // settleRef is the img onLoad/onError callback. Cleared in cleanup so events
+  // from a previous chapter (blob URLs being revoked → img errors) never corrupt
+  // the new chapter's settled/fail counters.
+  const settleRef = useRef<((fail: boolean) => void) | null>(null)
+
   useEffect(() => {
     if (!urls.length) return
+
     setStatus('loading')
     setErrorMsg(null)
+    setPageUrls(new Array(urls.length).fill(null))
+    imgRefs.current = new Array(urls.length).fill(null)
     onLoadingStateRef.current?.({ loading: true, loaded: 0, total: urls.length })
 
     let cancelled = false
-    let rafId = 0
-    let cleanupScroll: (() => void) | null = null
+    const createdUrls: string[] = []
+    let workerDone = false
+    let settled = 0
+    let failCount = 0
 
-    const bitmaps = new Map<number, ImageBitmap>()
-    const errors = new Set<number>()
+    function checkDone() {
+      if (!workerDone || settled < urls.length) return
+
+      if (failCount >= urls.length) {
+        setErrorMsg('Failed to load any pages')
+        setStatus('error')
+        onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
+        return
+      }
+
+      // Compute layout from rendered img positions (CSS pixels — no scale needed).
+      const layout: CanvasPageLayout[] = []
+      let top = 0
+      for (let i = 0; i < urls.length; i++) {
+        const h = imgRefs.current[i]?.offsetHeight ?? 0
+        layout.push({ top, height: h })
+        top += h
+      }
+      onLayoutRef.current(layout)
+      setStatus('ready')
+      onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
+    }
+
+    settleRef.current = (fail: boolean) => {
+      settled++
+      if (fail) failCount++
+      checkDone()
+    }
 
     const worker = new Worker(
       new URL('../../workers/imageLoader.worker.ts', import.meta.url),
@@ -63,12 +105,22 @@ export function ReaderCanvas({ urls, canvasRef, onLayout, onLoadingState }: Read
       const msg = e.data
 
       if (msg.type === 'page') {
-        bitmaps.set(msg.index, msg.bitmap)
+        const blob = new Blob([msg.buffer], { type: msg.mime })
+        const url = URL.createObjectURL(blob)
+        createdUrls.push(url)
+        setPageUrls(prev => {
+          const next = [...prev]
+          next[msg.index] = url
+          return next
+        })
         return
       }
 
       if (msg.type === 'error') {
-        errors.add(msg.index)
+        // No img element is created for this page — count it settled immediately.
+        settled++
+        failCount++
+        checkDone()
         return
       }
 
@@ -78,104 +130,8 @@ export function ReaderCanvas({ urls, canvasRef, onLayout, onLoadingState }: Read
       }
 
       if (msg.type === 'done') {
-        if (errors.size === urls.length) {
-          setErrorMsg('Failed to load any pages')
-          setStatus('error')
-          onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
-          return
-        }
-
-        const canvas = canvasRef.current
-        if (!canvas) return
-
-        const MAX_WIDTH = 1200
-        const MAX_HEIGHT = 32000
-
-        const rawWidth = Math.min(
-          Math.max(...[...bitmaps.values()].map(b => b.width), 800),
-          MAX_WIDTH,
-        )
-
-        const rawHeights = urls.map((_, i) => {
-          const b = bitmaps.get(i)
-          if (!b || b.width === 0) return 0
-          return Math.round(b.height * (rawWidth / b.width))
-        })
-        const rawTotal = rawHeights.reduce((a, b) => a + b, 0)
-
-        const scale = rawTotal > MAX_HEIGHT ? MAX_HEIGHT / rawTotal : 1
-        const canvasWidth = Math.round(rawWidth * scale)
-
-        const layout: CanvasPageLayout[] = []
-        let totalHeight = 0
-        for (let i = 0; i < urls.length; i++) {
-          const h = Math.round(rawHeights[i] * scale)
-          layout.push({ top: totalHeight, height: h })
-          totalHeight += h
-        }
-
-        canvas.width = canvasWidth
-        canvas.height = totalHeight
-
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          setErrorMsg('Could not get canvas context')
-          setStatus('error')
-          onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
-          return
-        }
-
-        // Track painted pages — never redraw an already-drawn page.
-        const drawn = new Set<number>()
-
-        // Pre-paint the first few pages synchronously so there is immediate
-        // content when the overlay fades out.
-        const PREFETCH = Math.min(3, urls.length)
-        for (let i = 0; i < PREFETCH; i++) {
-          const bitmap = bitmaps.get(i)
-          if (bitmap) {
-            ctx.drawImage(bitmap, 0, layout[i].top, canvasWidth, layout[i].height)
-            drawn.add(i)
-          }
-        }
-
-        onLayout(layout)
-        setStatus('ready')
-        onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
-
-        // Paint every undrawn page whose canvas region overlaps the viewport ± buffer.
-        function drawVisible() {
-          if (cancelled || !canvas || !ctx) return
-          const scaleF = canvas.width > 0 ? canvas.offsetWidth / canvas.width : 1
-          const canvasTopAbs = canvas.getBoundingClientRect().top + window.scrollY
-          const buffer = window.innerHeight
-          const vpTop = window.scrollY - buffer
-          const vpBottom = window.scrollY + window.innerHeight + buffer
-
-          for (let i = 0; i < layout.length; i++) {
-            if (drawn.has(i)) continue
-            const bitmap = bitmaps.get(i)
-            if (!bitmap) continue
-            const pageTop = canvasTopAbs + layout[i].top * scaleF
-            const pageBottom = pageTop + layout[i].height * scaleF
-            if (pageBottom >= vpTop && pageTop <= vpBottom) {
-              ctx.drawImage(bitmap, 0, layout[i].top, canvasWidth, layout[i].height)
-              drawn.add(i)
-            }
-          }
-        }
-
-        rafId = requestAnimationFrame(drawVisible)
-
-        const onScroll = () => {
-          cancelAnimationFrame(rafId)
-          rafId = requestAnimationFrame(drawVisible)
-        }
-        window.addEventListener('scroll', onScroll, { passive: true })
-        cleanupScroll = () => {
-          window.removeEventListener('scroll', onScroll)
-          cancelAnimationFrame(rafId)
-        }
+        workerDone = true
+        checkDone()
       }
     }
 
@@ -190,12 +146,10 @@ export function ReaderCanvas({ urls, canvasRef, onLayout, onLoadingState }: Read
 
     return () => {
       cancelled = true
-      cleanupScroll?.()
-      cancelAnimationFrame(rafId)
+      settleRef.current = null
       worker.terminate()
-      bitmaps.forEach(b => b.close())
+      createdUrls.forEach(u => URL.revokeObjectURL(u))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urls])
 
   return (
@@ -205,11 +159,27 @@ export function ReaderCanvas({ urls, canvasRef, onLayout, onLoadingState }: Read
           {errorMsg}
         </div>
       )}
-      <canvas
-        ref={canvasRef}
-        className="block w-full"
-        style={{ display: status === 'ready' ? 'block' : 'none' }}
-      />
+      {/* visibility:hidden keeps imgs in layout flow (so offsetHeight is accurate)
+          while the loading overlay covers the screen. */}
+      <div
+        ref={containerRef}
+        style={{ visibility: status === 'ready' ? 'visible' : 'hidden' }}
+      >
+        {pageUrls.map((url, i) =>
+          url ? (
+            <img
+              key={i}
+              ref={el => { imgRefs.current[i] = el }}
+              src={url}
+              className="block w-full"
+              alt={`Page ${i + 1}`}
+              draggable={false}
+              onLoad={() => settleRef.current?.(false)}
+              onError={() => settleRef.current?.(true)}
+            />
+          ) : null,
+        )}
+      </div>
     </>
   )
 }
