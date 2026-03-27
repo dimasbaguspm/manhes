@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import { useMangaReader } from '../providers/MangaReaderDataProvider'
 import { usePageAnchor, type CanvasPageLayout } from '../hooks/usePageAnchor'
+import { useProgressSave } from '../hooks/useProgressSave'
 import { DEEP_LINKS } from '../lib/deepLinks'
 import { InteractiveProvider, useInteractive } from '../components/reader/InteractiveProvider'
 import { useReaderSettings } from '../components/reader/useReaderSettings'
@@ -11,8 +11,11 @@ import { ReaderMenu } from '../components/reader/ReaderMenu'
 import { ReaderSettingsPanel } from '../components/reader/ReaderSettings'
 import { ReaderStrip } from '../components/reader/ReaderStrip'
 import { ReaderProgressBar } from '../components/reader/ReaderProgressBar'
-import { ReaderCanvas } from '../components/reader/ReaderCanvas'
-import { ChevronLeft, ChevronRight } from '../components/reader/Icons'
+import { ReaderCanvas, type CanvasLoadingInfo } from '../components/reader/ReaderCanvas'
+import { ChapterNavFooter } from '../components/reader/ChapterNavFooter'
+import { ShortcutsOverlay } from '../components/reader/ShortcutsOverlay'
+
+type OverlayState = 'visible' | 'fade' | 'gone'
 
 // ── Inner content — requires InteractiveProvider in the tree ──────────────────
 
@@ -29,10 +32,49 @@ function ReaderContent() {
     onStripPointerCancel,
     doubleTapHoldCallbackRef,
   } = useInteractive()
+
   const [menuOpen, setMenuOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [pageLayout, setPageLayout] = useState<CanvasPageLayout[] | null>(null)
+
+  // ── Canvas loading overlay ─────────────────────────────────────────────────
+  // Shown as a full-viewport dim screen while the worker fetches images.
+  // Transitions: visible → fade (opacity-0, 300 ms) → gone (unmounted).
+  const [canvasOverlay, setCanvasOverlay] = useState<OverlayState>('gone')
+  const [canvasLoadInfo, setCanvasLoadInfo] = useState({ loaded: 0, total: 0 })
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // When a new chapter's data arrives, show the overlay before the canvas mounts.
+  const lastDataChapterRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!data) return
+    if (chapter !== lastDataChapterRef.current) {
+      lastDataChapterRef.current = chapter
+      if (fadeTimerRef.current !== null) clearTimeout(fadeTimerRef.current)
+      setCanvasOverlay('visible')
+      setCanvasLoadInfo({ loaded: 0, total: 0 })
+    }
+  }, [data, chapter])
+
+  const handleCanvasLoadingState = useCallback((info: CanvasLoadingInfo) => {
+    setCanvasLoadInfo({ loaded: info.loaded, total: info.total })
+    if (!info.loading) {
+      setCanvasOverlay('fade')
+      fadeTimerRef.current = setTimeout(() => {
+        setCanvasOverlay('gone')
+        fadeTimerRef.current = null
+      }, 300)
+    }
+  }, [])
+
+  // Clear the fade timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (fadeTimerRef.current !== null) clearTimeout(fadeTimerRef.current)
+    }
+  }, [])
 
   // Reset layout whenever the chapter changes so the anchor hook doesn't use
   // stale geometry while the new canvas is being drawn.
@@ -40,28 +82,7 @@ function ReaderContent() {
     setPageLayout(null)
   }, [chapter])
 
-  // Persist reading progress (%) to localStorage when chapter changes or on unmount.
-  // We use a ref so the cleanup closure always captures the latest scrollPct
-  // without needing it in the effect dependency array (which would re-register
-  // the cleanup on every scroll event).
-  const scrollPctSaveRef = useRef(scrollPct)
-  useEffect(() => { scrollPctSaveRef.current = scrollPct })
-
-  const saveProgress = useCallback(() => {
-    if (!mangaId || !lang || !chapter) return
-    try {
-      const raw = localStorage.getItem('manhes_read_progress')
-      const prev = (raw ? JSON.parse(raw) : {}) as Record<string, number>
-      localStorage.setItem('manhes_read_progress', JSON.stringify({
-        ...prev,
-        [`${mangaId}/${lang}/${chapter}`]: scrollPctSaveRef.current,
-      }))
-    } catch {}
-  }, [mangaId, lang, chapter])
-
-  useEffect(() => {
-    return () => { saveProgress() }
-  }, [saveProgress])
+  useProgressSave(mangaId, lang, chapter, scrollPct)
 
   // Double-tap-hold opens settings.
   useEffect(() => {
@@ -69,11 +90,12 @@ function ReaderContent() {
     return () => { doubleTapHoldCallbackRef.current = null }
   }, [doubleTapHoldCallbackRef])
 
-  // Keyboard shortcuts: f = fullscreen, s = settings.
+  // Keyboard shortcuts: f = fullscreen, s = settings, / = shortcuts, Esc = close.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
       if (e.key === 'f' || e.key === 'F') {
         if (!document.fullscreenElement) {
           document.documentElement.requestFullscreen?.()
@@ -81,15 +103,21 @@ function ReaderContent() {
           document.exitFullscreen?.()
         }
       }
-      if (e.key === 's' || e.key === 'S') {
-        setMenuOpen(v => !v)
+      if (e.key === 's' || e.key === 'S') setMenuOpen(v => !v)
+      if (e.key === '/') {
+        e.preventDefault()
+        setShortcutsOpen(v => !v)
+      }
+      if (e.key === 'Escape') {
+        setShortcutsOpen(false)
+        setMenuOpen(false)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const overlay = usePageAnchor(data, mangaId, chapter, canvasRef, pageLayout)
+  const scrollRestoreOverlay = usePageAnchor(data, mangaId, chapter, canvasRef, pageLayout)
 
   useAutoScroll(
     settings.autoScroll,
@@ -103,11 +131,29 @@ function ReaderContent() {
   return (
     <div className={`min-h-screen ${bgClass}`}>
 
+      {/* Worker loading overlay — dim screen with centered progress while images load */}
+      {canvasOverlay !== 'gone' && (
+        <div
+          className={`fixed inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-gray-950 transition-opacity duration-300 ${
+            canvasOverlay === 'fade' ? 'pointer-events-none opacity-0' : 'opacity-100'
+          }`}
+        >
+          <SpinnerIcon className="h-7 w-7 animate-spin text-indigo-500" />
+          <p className="text-sm text-gray-500">
+            {canvasLoadInfo.total > 0
+              ? canvasLoadInfo.loaded > 0
+                ? `Loading ${canvasLoadInfo.loaded} / ${canvasLoadInfo.total} page${canvasLoadInfo.total !== 1 ? 's' : ''}…`
+                : `Loading ${canvasLoadInfo.total} page${canvasLoadInfo.total !== 1 ? 's' : ''}…`
+              : 'Loading…'}
+          </p>
+        </div>
+      )}
+
       {/* Scroll-restore overlay — fades out once the target page is scrolled to */}
-      {overlay !== 'gone' && (
+      {scrollRestoreOverlay !== 'gone' && (
         <div
           className={`fixed inset-0 z-50 bg-gray-950 transition-opacity duration-300 ${
-            overlay === 'fade' ? 'opacity-0' : 'opacity-100'
+            scrollRestoreOverlay === 'fade' ? 'opacity-0' : 'opacity-100'
           }`}
         />
       )}
@@ -120,6 +166,7 @@ function ReaderContent() {
         chaptersHref={chaptersHref}
         menuOpen={menuOpen}
         onMenuToggle={() => setMenuOpen(o => !o)}
+        onShortcutsToggle={() => setShortcutsOpen(o => !o)}
         prevDisabled={data?.prevChapter == null}
         nextDisabled={data?.nextChapter == null}
         onPrev={goPrev}
@@ -138,6 +185,8 @@ function ReaderContent() {
           onNext={goNext}
         />
       </ReaderMenu>
+
+      <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <ReaderStrip
         maxWidthClass={stripMaxWidthClass}
@@ -160,9 +209,11 @@ function ReaderContent() {
             urls={data.pages}
             canvasRef={canvasRef}
             onLayout={setPageLayout}
+            onLoadingState={handleCanvasLoadingState}
           />
         ) : undefined}
-        renderFooter={data ? () => (
+        // Footer is suppressed while the loading overlay is covering the screen.
+        renderFooter={data && canvasOverlay === 'gone' ? () => (
           <ChapterNavFooter
             chaptersHref={chaptersHref}
             prevDisabled={data.prevChapter == null}
@@ -183,53 +234,6 @@ function ReaderContent() {
   )
 }
 
-// ── Chapter navigation footer ─────────────────────────────────────────────────
-
-interface ChapterNavFooterProps {
-  chaptersHref: string
-  prevDisabled: boolean
-  nextDisabled: boolean
-  onPrev: () => void
-  onNext: () => void
-}
-
-const navBtnBase =
-  'inline-flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-900 py-2.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
-
-function ChapterNavFooter({ chaptersHref, prevDisabled, nextDisabled, onPrev, onNext }: ChapterNavFooterProps) {
-  return (
-    <div className="my-10 flex items-center justify-center gap-2 px-4 sm:gap-4">
-      <button
-        onClick={onPrev}
-        disabled={prevDisabled}
-        className={`${navBtnBase} px-3 sm:px-5`}
-      >
-        <ChevronLeft className="h-4 w-4 shrink-0" />
-        <span className="hidden sm:inline">Previous</span>
-        <span className="sm:hidden">Prev</span>
-      </button>
-
-      <Link
-        to={chaptersHref}
-        className={`${navBtnBase} px-3 sm:px-5`}
-      >
-        <span className="hidden sm:inline">Chapter List</span>
-        <span className="sm:hidden">List</span>
-      </Link>
-
-      <button
-        onClick={onNext}
-        disabled={nextDisabled}
-        className={`${navBtnBase} px-3 sm:px-5`}
-      >
-        <span className="hidden sm:inline">Next</span>
-        <span className="sm:hidden">Next</span>
-        <ChevronRight className="h-4 w-4 shrink-0" />
-      </button>
-    </div>
-  )
-}
-
 // ── Page export — InteractiveProvider wraps the content tree ─────────────────
 
 export default function ReaderPage() {
@@ -237,5 +241,20 @@ export default function ReaderPage() {
     <InteractiveProvider>
       <ReaderContent />
     </InteractiveProvider>
+  )
+}
+
+// ── Shared ────────────────────────────────────────────────────────────────────
+
+function SpinnerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
+    </svg>
   )
 }

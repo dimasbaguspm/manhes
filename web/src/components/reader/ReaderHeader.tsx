@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, GearIcon } from './Icons'
+import { ChevronLeft, ChevronRight, GearIcon, KeyboardIcon } from './Icons'
 
 const navBtn =
   'inline-flex items-center gap-1 rounded border border-gray-700 px-3 py-1 text-xs text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
@@ -12,6 +12,7 @@ interface ReaderHeaderProps {
   chaptersHref: string
   menuOpen: boolean
   onMenuToggle: () => void
+  onShortcutsToggle: () => void
   prevDisabled: boolean
   nextDisabled: boolean
   onPrev: () => void
@@ -26,6 +27,7 @@ export function ReaderHeader({
   chaptersHref,
   menuOpen,
   onMenuToggle,
+  onShortcutsToggle,
   prevDisabled,
   nextDisabled,
   onPrev,
@@ -60,6 +62,15 @@ export function ReaderHeader({
               Next <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          <button
+            onClick={onShortcutsToggle}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (/)"
+            className={navBtn}
+          >
+            <KeyboardIcon />
+          </button>
 
           <button
             onClick={onMenuToggle}

@@ -1,74 +1,114 @@
-import { useEffect, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { CanvasPageLayout } from '../../hooks/usePageAnchor'
+import type { WorkerOutMessage } from '../../workers/imageLoader.worker'
+
+export interface CanvasLoadingInfo {
+  loading: boolean
+  loaded: number
+  total: number
+}
 
 interface ReaderCanvasProps {
   urls: string[]
   /** Forwarded ref — the parent holds this so anchor tracking can read canvas geometry. */
   canvasRef: RefObject<HTMLCanvasElement>
   onLayout: (layout: CanvasPageLayout[]) => void
+  /**
+   * Called whenever loading state changes. Parent is responsible for showing
+   * a loading overlay; this component only renders the canvas and inline errors.
+   */
+  onLoadingState?: (info: CanvasLoadingInfo) => void
 }
 
 /**
- * Loads all page images, stitches them into a single canvas, then calls
- * onLayout with per-page pixel positions so the anchor hook can scroll
- * without needing individual DOM elements.
+ * Loads all page images off the main thread via a Web Worker, then stitches
+ * them into a single canvas. The worker fetches and decodes each image as an
+ * ImageBitmap, transferring ownership back to the main thread so the CPU-heavy
+ * decode never blocks the UI.
  *
- * Drawing is lazy: the first few pages are painted immediately so content
- * appears at once; the remaining pages are painted on demand as the user
- * scrolls them into (or near) the viewport, avoiding a full-canvas draw
- * that would hang the main thread.
+ * Loading progress and state are reported upward via onLoadingState — the
+ * parent owns the loading overlay so it can position it anywhere in the tree.
+ *
+ * Drawing remains lazy: the first few pages are painted immediately, the rest
+ * are painted on demand as the user scrolls near them.
  */
-export function ReaderCanvas({ urls, canvasRef, onLayout }: ReaderCanvasProps) {
+export function ReaderCanvas({ urls, canvasRef, onLayout, onLoadingState }: ReaderCanvasProps) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  // Always-fresh ref so the worker handler never uses a stale callback.
+  const onLoadingStateRef = useRef(onLoadingState)
+  useEffect(() => { onLoadingStateRef.current = onLoadingState })
 
   useEffect(() => {
     if (!urls.length) return
     setStatus('loading')
     setErrorMsg(null)
+    onLoadingStateRef.current?.({ loading: true, loaded: 0, total: urls.length })
 
     let cancelled = false
     let rafId = 0
     let cleanupScroll: (() => void) | null = null
 
-    const load = (url: string) =>
-      new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image()
-        img.onload = () => resolve(img)
-        img.onerror = () => reject(new Error(`Failed to load page`))
-        img.src = url
-      })
+    const bitmaps = new Map<number, ImageBitmap>()
+    const errors = new Set<number>()
 
-    Promise.all(urls.map(load))
-      .then(loaded => {
-        if (cancelled) return
+    const worker = new Worker(
+      new URL('../../workers/imageLoader.worker.ts', import.meta.url),
+      { type: 'module' },
+    )
+
+    worker.onmessage = (e: MessageEvent<WorkerOutMessage>) => {
+      if (cancelled) return
+      const msg = e.data
+
+      if (msg.type === 'page') {
+        bitmaps.set(msg.index, msg.bitmap)
+        return
+      }
+
+      if (msg.type === 'error') {
+        errors.add(msg.index)
+        return
+      }
+
+      if (msg.type === 'progress') {
+        onLoadingStateRef.current?.({ loading: true, loaded: msg.loaded, total: msg.total })
+        return
+      }
+
+      if (msg.type === 'done') {
+        if (errors.size === urls.length) {
+          setErrorMsg('Failed to load any pages')
+          setStatus('error')
+          onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
+          return
+        }
+
         const canvas = canvasRef.current
         if (!canvas) return
 
-        // Chrome's GPU texture limit is ~32 767 px in a single dimension.
-        // First compute page heights at the desired width, then scale the whole
-        // canvas down if the total height would exceed the safe threshold.
         const MAX_WIDTH = 1200
         const MAX_HEIGHT = 32000
 
         const rawWidth = Math.min(
-          Math.max(...loaded.map(img => img.naturalWidth), 800),
+          Math.max(...[...bitmaps.values()].map(b => b.width), 800),
           MAX_WIDTH,
         )
-        const rawHeights = loaded.map(img =>
-          img.naturalWidth > 0
-            ? Math.round(img.naturalHeight * (rawWidth / img.naturalWidth))
-            : 0,
-        )
+
+        const rawHeights = urls.map((_, i) => {
+          const b = bitmaps.get(i)
+          if (!b || b.width === 0) return 0
+          return Math.round(b.height * (rawWidth / b.width))
+        })
         const rawTotal = rawHeights.reduce((a, b) => a + b, 0)
 
-        // Uniform scale-down when height would overflow the GPU limit.
         const scale = rawTotal > MAX_HEIGHT ? MAX_HEIGHT / rawTotal : 1
         const canvasWidth = Math.round(rawWidth * scale)
 
         const layout: CanvasPageLayout[] = []
         let totalHeight = 0
-        for (let i = 0; i < loaded.length; i++) {
+        for (let i = 0; i < urls.length; i++) {
           const h = Math.round(rawHeights[i] * scale)
           layout.push({ top: totalHeight, height: h })
           totalHeight += h
@@ -81,29 +121,29 @@ export function ReaderCanvas({ urls, canvasRef, onLayout }: ReaderCanvasProps) {
         if (!ctx) {
           setErrorMsg('Could not get canvas context')
           setStatus('error')
+          onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
           return
         }
 
-        // ── Lazy drawing ──────────────────────────────────────────────────────
-        // Track which pages have already been painted so we never redraw them.
+        // Track painted pages — never redraw an already-drawn page.
         const drawn = new Set<number>()
 
-        // Pre-draw: paint the first few pages synchronously before the canvas
-        // is shown. Drawing 3 pages is fast (~ms) and ensures there is
-        // immediate content visible — no blank canvas flash.
-        const PREFETCH = Math.min(3, loaded.length)
+        // Pre-paint the first few pages synchronously so there is immediate
+        // content when the overlay fades out.
+        const PREFETCH = Math.min(3, urls.length)
         for (let i = 0; i < PREFETCH; i++) {
-          ctx.drawImage(loaded[i], 0, layout[i].top, canvasWidth, layout[i].height)
-          drawn.add(i)
+          const bitmap = bitmaps.get(i)
+          if (bitmap) {
+            ctx.drawImage(bitmap, 0, layout[i].top, canvasWidth, layout[i].height)
+            drawn.add(i)
+          }
         }
 
         onLayout(layout)
         setStatus('ready')
+        onLoadingStateRef.current?.({ loading: false, loaded: urls.length, total: urls.length })
 
-        // drawVisible paints every undrawn page whose canvas-pixel region
-        // overlaps the current viewport ± one viewport of buffer.
-        // getBoundingClientRect works once the canvas is display:block
-        // (after React commits the setStatus('ready') update).
+        // Paint every undrawn page whose canvas region overlaps the viewport ± buffer.
         function drawVisible() {
           if (cancelled || !canvas || !ctx) return
           const scaleF = canvas.width > 0 ? canvas.offsetWidth / canvas.width : 1
@@ -114,19 +154,19 @@ export function ReaderCanvas({ urls, canvasRef, onLayout }: ReaderCanvasProps) {
 
           for (let i = 0; i < layout.length; i++) {
             if (drawn.has(i)) continue
+            const bitmap = bitmaps.get(i)
+            if (!bitmap) continue
             const pageTop = canvasTopAbs + layout[i].top * scaleF
             const pageBottom = pageTop + layout[i].height * scaleF
             if (pageBottom >= vpTop && pageTop <= vpBottom) {
-              ctx.drawImage(loaded[i], 0, layout[i].top, canvasWidth, layout[i].height)
+              ctx.drawImage(bitmap, 0, layout[i].top, canvasWidth, layout[i].height)
               drawn.add(i)
             }
           }
         }
 
-        // Defer initial drawVisible until after React commits (canvas visible).
         rafId = requestAnimationFrame(drawVisible)
 
-        // Draw more pages as the user scrolls.
         const onScroll = () => {
           cancelAnimationFrame(rafId)
           rafId = requestAnimationFrame(drawVisible)
@@ -136,31 +176,30 @@ export function ReaderCanvas({ urls, canvasRef, onLayout }: ReaderCanvasProps) {
           window.removeEventListener('scroll', onScroll)
           cancelAnimationFrame(rafId)
         }
-      })
-      .catch(err => {
-        if (cancelled) return
-        setErrorMsg(String(err?.message ?? err))
-        setStatus('error')
-      })
+      }
+    }
+
+    worker.onerror = (e) => {
+      if (cancelled) return
+      setErrorMsg(e.message ?? 'Worker error')
+      setStatus('error')
+      onLoadingStateRef.current?.({ loading: false, loaded: 0, total: urls.length })
+    }
+
+    worker.postMessage({ urls })
 
     return () => {
       cancelled = true
       cleanupScroll?.()
       cancelAnimationFrame(rafId)
+      worker.terminate()
+      bitmaps.forEach(b => b.close())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urls])
 
   return (
     <>
-      {status === 'loading' && (
-        <div className="flex flex-col items-center justify-center gap-3 py-24">
-          <SpinnerIcon className="h-7 w-7 animate-spin text-indigo-500" />
-          <p className="text-sm text-gray-500">
-            Loading {urls.length} page{urls.length !== 1 ? 's' : ''}…
-          </p>
-        </div>
-      )}
       {status === 'error' && (
         <div className="m-6 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">
           {errorMsg}
@@ -172,18 +211,5 @@ export function ReaderCanvas({ urls, canvasRef, onLayout }: ReaderCanvasProps) {
         style={{ display: status === 'ready' ? 'block' : 'none' }}
       />
     </>
-  )
-}
-
-function SpinnerIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-      />
-    </svg>
   )
 }
