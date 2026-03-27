@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useMangaReader } from '../providers/MangaReaderDataProvider'
-import { usePageAnchor, pageAnchor } from '../hooks/usePageAnchor'
+import { usePageAnchor, type CanvasPageLayout } from '../hooks/usePageAnchor'
 import { DEEP_LINKS } from '../lib/deepLinks'
 import { InteractiveProvider, useInteractive } from '../components/reader/InteractiveProvider'
 import { useReaderSettings } from '../components/reader/useReaderSettings'
@@ -11,15 +11,62 @@ import { ReaderMenu } from '../components/reader/ReaderMenu'
 import { ReaderSettingsPanel } from '../components/reader/ReaderSettings'
 import { ReaderStrip } from '../components/reader/ReaderStrip'
 import { ReaderProgressBar } from '../components/reader/ReaderProgressBar'
+import { ReaderCanvas } from '../components/reader/ReaderCanvas'
+import { ChevronLeft, ChevronRight } from '../components/reader/Icons'
 
 // ── Inner content — requires InteractiveProvider in the tree ──────────────────
 
 function ReaderContent() {
   const { data, loading, error, chapter, mangaId, lang, goNext, goPrev } = useMangaReader()
   const { settings, set, stripMaxWidthClass, bgClass } = useReaderSettings()
-  const { scrollPct, headerVisible, setHeaderVisible, isTouchingRef, onStripTap } = useInteractive()
+  const {
+    scrollPct,
+    headerVisible,
+    setHeaderVisible,
+    isTouchingRef,
+    onStripPointerDown,
+    onStripPointerUp,
+    onStripPointerCancel,
+    doubleTapHoldCallbackRef,
+  } = useInteractive()
   const [menuOpen, setMenuOpen] = useState(false)
-  const overlay = usePageAnchor(data, mangaId, chapter)
+
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [pageLayout, setPageLayout] = useState<CanvasPageLayout[] | null>(null)
+
+  // Reset layout whenever the chapter changes so the anchor hook doesn't use
+  // stale geometry while the new canvas is being drawn.
+  useEffect(() => {
+    setPageLayout(null)
+  }, [chapter])
+
+  // Double-tap-hold opens settings.
+  useEffect(() => {
+    doubleTapHoldCallbackRef.current = () => setMenuOpen(true)
+    return () => { doubleTapHoldCallbackRef.current = null }
+  }, [doubleTapHoldCallbackRef])
+
+  // Keyboard shortcuts: f = fullscreen, s = settings.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (e.key === 'f' || e.key === 'F') {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.()
+        } else {
+          document.exitFullscreen?.()
+        }
+      }
+      if (e.key === 's' || e.key === 'S') {
+        setMenuOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  const overlay = usePageAnchor(data, mangaId, chapter, canvasRef, pageLayout)
 
   useAutoScroll(
     settings.autoScroll,
@@ -71,8 +118,9 @@ function ReaderContent() {
 
       <ReaderStrip
         maxWidthClass={stripMaxWidthClass}
-        gap={settings.stripGap}
-        onClick={onStripTap}
+        onPointerDown={onStripPointerDown}
+        onPointerUp={onStripPointerUp}
+        onPointerCancel={onStripPointerCancel}
         renderLoading={loading ? () => (
           <div className="flex h-96 items-center justify-center text-gray-500">
             Loading chapter…
@@ -83,39 +131,22 @@ function ReaderContent() {
             {error}
           </div>
         ) : undefined}
-        renderPages={data ? () => data.pages.map((url, i) => (
-          <img
-            key={i}
-            id={pageAnchor(mangaId!, chapter, i + 1)}
-            src={url}
-            alt={`Page ${i + 1}`}
-            className="w-full"
-            loading={i < 3 ? 'eager' : 'lazy'}
+        renderPages={data ? () => (
+          <ReaderCanvas
+            key={chapter}
+            urls={data.pages}
+            canvasRef={canvasRef}
+            onLayout={setPageLayout}
           />
-        )) : undefined}
+        ) : undefined}
         renderFooter={data ? () => (
-          <div className="my-10 flex flex-wrap justify-center gap-4 px-4">
-            <button
-              onClick={goPrev}
-              disabled={data.prevChapter == null}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-5 py-2.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              ← Previous Chapter
-            </button>
-            <Link
-              to={chaptersHref}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-5 py-2.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white"
-            >
-              Chapter List
-            </Link>
-            <button
-              onClick={goNext}
-              disabled={data.nextChapter == null}
-              className="rounded-lg border border-gray-700 bg-gray-900 px-5 py-2.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              Next Chapter →
-            </button>
-          </div>
+          <ChapterNavFooter
+            chaptersHref={chaptersHref}
+            prevDisabled={data.prevChapter == null}
+            nextDisabled={data.nextChapter == null}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         ) : undefined}
       />
 
@@ -125,6 +156,53 @@ function ReaderContent() {
         showIndicator={settings.showPageIndicator}
       />
 
+    </div>
+  )
+}
+
+// ── Chapter navigation footer ─────────────────────────────────────────────────
+
+interface ChapterNavFooterProps {
+  chaptersHref: string
+  prevDisabled: boolean
+  nextDisabled: boolean
+  onPrev: () => void
+  onNext: () => void
+}
+
+const navBtnBase =
+  'inline-flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-900 py-2.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
+
+function ChapterNavFooter({ chaptersHref, prevDisabled, nextDisabled, onPrev, onNext }: ChapterNavFooterProps) {
+  return (
+    <div className="my-10 flex items-center justify-center gap-2 px-4 sm:gap-4">
+      <button
+        onClick={onPrev}
+        disabled={prevDisabled}
+        className={`${navBtnBase} px-3 sm:px-5`}
+      >
+        <ChevronLeft className="h-4 w-4 shrink-0" />
+        <span className="hidden sm:inline">Previous</span>
+        <span className="sm:hidden">Prev</span>
+      </button>
+
+      <Link
+        to={chaptersHref}
+        className={`${navBtnBase} px-3 sm:px-5`}
+      >
+        <span className="hidden sm:inline">Chapter List</span>
+        <span className="sm:hidden">List</span>
+      </Link>
+
+      <button
+        onClick={onNext}
+        disabled={nextDisabled}
+        className={`${navBtnBase} px-3 sm:px-5`}
+      >
+        <span className="hidden sm:inline">Next</span>
+        <span className="sm:hidden">Next</span>
+        <ChevronRight className="h-4 w-4 shrink-0" />
+      </button>
     </div>
   )
 }

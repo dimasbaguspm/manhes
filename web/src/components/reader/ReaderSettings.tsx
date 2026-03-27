@@ -63,24 +63,6 @@ export function ReaderSettingsPanel({
       </section>
 
       <section>
-        <SectionLabel>
-          Strip gap —{' '}
-          <span className="font-normal normal-case text-gray-400">
-            {settings.stripGap === 0 ? 'none' : `${settings.stripGap * 4}px`}
-          </span>
-        </SectionLabel>
-        <input
-          type="range"
-          min={0}
-          max={8}
-          step={2}
-          value={settings.stripGap}
-          onChange={e => set('stripGap', parseInt(e.target.value))}
-          className="w-full accent-indigo-500"
-        />
-      </section>
-
-      <section>
         <SectionLabel>Background</SectionLabel>
         <div className="flex gap-2">
           {BG_COLOR_OPTIONS.map(opt => (

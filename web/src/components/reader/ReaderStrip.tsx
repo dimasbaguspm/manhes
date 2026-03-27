@@ -3,51 +3,60 @@ import type { ReactNode } from 'react'
 interface ReaderStripProps {
   /** Tailwind max-width class controlling how wide the strip is. */
   maxWidthClass: string
-  /** Gap between images in Tailwind scale units (value × 4 = px). 0 = no gap. */
-  gap: number
-  /** Called on every click/tap — double-tap detection lives in the caller. */
-  onClick: () => void
+  /** Called on pointerdown — used for double-tap and hold detection. */
+  onPointerDown: () => void
+  /** Called on pointerup — completes the tap or hold gesture. */
+  onPointerUp: () => void
+  /** Called on pointercancel — cancels any in-flight hold timer. */
+  onPointerCancel: () => void
   /** Render prop for the loading state. Omit when not loading. */
   renderLoading?: () => ReactNode
   /** Render prop for an error banner. Omit when there's no error. */
   renderError?: () => ReactNode
-  /** Render prop for the actual page images inside the constrained container. */
+  /** Render prop for the actual page content inside the constrained container. */
   renderPages?: () => ReactNode
   /**
    * Render prop for the bottom chapter-navigation footer.
-   * Automatically isolated from the double-tap handler so nav clicks
-   * don't accidentally toggle the header.
+   * Automatically isolated from pointer handlers so nav clicks
+   * don't accidentally trigger tap/hold gestures.
    */
   renderFooter?: () => ReactNode
 }
 
 export function ReaderStrip({
   maxWidthClass,
-  gap,
-  onClick,
+  onPointerDown,
+  onPointerUp,
+  onPointerCancel,
   renderLoading,
   renderError,
   renderPages,
   renderFooter,
 }: ReaderStripProps) {
   return (
-    <div className="flex flex-col items-center py-4" onClick={onClick}>
+    <div
+      className="flex flex-col items-center py-4"
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+    >
 
       {renderLoading?.()}
       {renderError?.()}
 
       {renderPages && (
-        <div
-          className={`flex w-full flex-col ${maxWidthClass} mx-auto`}
-          style={gap > 0 ? { gap: `${gap * 4}px` } : undefined}
-        >
+        <div className={`flex w-full flex-col ${maxWidthClass} mx-auto`}>
           {renderPages()}
         </div>
       )}
 
-      {/* Footer clicks must not bubble up to the double-tap handler. */}
+      {/* Footer pointer events must not bubble up to the gesture handler. */}
       {renderFooter && (
-        <div onClick={e => e.stopPropagation()}>
+        <div
+          onPointerDown={e => e.stopPropagation()}
+          onPointerUp={e => e.stopPropagation()}
+          onPointerCancel={e => e.stopPropagation()}
+        >
           {renderFooter()}
         </div>
       )}

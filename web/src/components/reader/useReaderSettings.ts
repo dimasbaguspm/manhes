@@ -2,7 +2,6 @@ import { usePersistedState } from '../../hooks/usePersistedState'
 
 export interface ReaderSettings {
   stripWidth: string
-  stripGap: number
   bgColor: string
   autoScroll: boolean
   autoScrollSpeed: number
@@ -12,7 +11,6 @@ export interface ReaderSettings {
 
 export const READER_SETTINGS_DEFAULT: ReaderSettings = {
   stripWidth: 'normal',
-  stripGap: 0,
   bgColor: 'dark',
   autoScroll: false,
   autoScrollSpeed: 1,

@@ -31,11 +31,17 @@ export interface InteractiveCtx {
    * Designed to be read inside intervals/rAF without causing re-renders.
    */
   isTouchingRef: MutableRefObject<boolean>
+  /** Call on pointerdown on the manga strip. Handles double-tap and hold detection. */
+  onStripPointerDown: () => void
+  /** Call on pointerup on the manga strip. Completes tap or hold gesture. */
+  onStripPointerUp: () => void
+  /** Call on pointercancel on the manga strip (e.g. scroll gesture took over). */
+  onStripPointerCancel: () => void
   /**
-   * Call this from any tap/click handler on the manga strip.
-   * Two taps within 350 ms toggle header visibility.
+   * Assign a callback to receive double-tap-hold events (second tap held ≥ 400 ms).
+   * ReaderContent sets this to open the settings panel.
    */
-  onStripTap: () => void
+  doubleTapHoldCallbackRef: MutableRefObject<(() => void) | null>
 }
 
 const Ctx = createContext<InteractiveCtx | null>(null)
@@ -44,8 +50,58 @@ export function InteractiveProvider({ children }: { children: ReactNode }) {
   const [scrollPct, setScrollPct] = useState(0)
   const [headerVisible, setHeaderVisible] = useState(true)
   const isTouchingRef = useRef(false)
-  const lastTapRef = useRef(0)
 
+  // ── Pointer-based double-tap + hold detection ─────────────────────────────
+  const lastDownRef = useRef(0)
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isSecondTapPendingRef = useRef(false)
+  const doubleTapHoldCallbackRef = useRef<(() => void) | null>(null)
+
+  // Clear any pending hold timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current)
+    }
+  }, [])
+
+  const onStripPointerDown = useCallback(() => {
+    const now = Date.now()
+    if (now - lastDownRef.current < 350) {
+      // Second tap within window — start hold timer.
+      isSecondTapPendingRef.current = true
+      holdTimerRef.current = setTimeout(() => {
+        holdTimerRef.current = null
+        isSecondTapPendingRef.current = false
+        lastDownRef.current = 0
+        doubleTapHoldCallbackRef.current?.()
+      }, 400)
+    } else {
+      isSecondTapPendingRef.current = false
+    }
+    lastDownRef.current = now
+  }, [])
+
+  const onStripPointerUp = useCallback(() => {
+    if (holdTimerRef.current !== null) {
+      clearTimeout(holdTimerRef.current)
+      holdTimerRef.current = null
+      if (isSecondTapPendingRef.current) {
+        // Released before hold threshold → quick double-tap, toggle header.
+        setHeaderVisible(v => !v)
+      }
+      isSecondTapPendingRef.current = false
+    }
+  }, [])
+
+  const onStripPointerCancel = useCallback(() => {
+    if (holdTimerRef.current !== null) {
+      clearTimeout(holdTimerRef.current)
+      holdTimerRef.current = null
+    }
+    isSecondTapPendingRef.current = false
+  }, [])
+
+  // ── Scroll progress ───────────────────────────────────────────────────────
   useEffect(() => {
     const handle = () => {
       const el = document.documentElement
@@ -56,6 +112,7 @@ export function InteractiveProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('scroll', handle)
   }, [])
 
+  // ── Touch tracking (for autoScroll pause) ────────────────────────────────
   useEffect(() => {
     const onStart = () => { isTouchingRef.current = true }
     const onEnd = () => { isTouchingRef.current = false }
@@ -69,18 +126,17 @@ export function InteractiveProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const onStripTap = useCallback(() => {
-    const now = Date.now()
-    if (now - lastTapRef.current < 350) {
-      setHeaderVisible(v => !v)
-      lastTapRef.current = 0
-    } else {
-      lastTapRef.current = now
-    }
-  }, [])
-
   return (
-    <Ctx.Provider value={{ scrollPct, headerVisible, setHeaderVisible, isTouchingRef, onStripTap }}>
+    <Ctx.Provider value={{
+      scrollPct,
+      headerVisible,
+      setHeaderVisible,
+      isTouchingRef,
+      onStripPointerDown,
+      onStripPointerUp,
+      onStripPointerCancel,
+      doubleTapHoldCallbackRef,
+    }}>
       {children}
     </Ctx.Provider>
   )
