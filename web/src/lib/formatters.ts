@@ -68,7 +68,7 @@ export function formatChapterList(raw: DomainChapterListResponse): AppChapterLis
     id: raw.id ?? '',
     lang: raw.lang ?? '',
     chapters: (raw.chapters ?? []).map(c => ({
-      chapter: c.chapter ?? 0,
+      chapter: c.chapter ?? "0",
       pageCount: c.page_count ?? 0,
       uploadedAt: c.uploaded_at ?? '',
     })),
@@ -89,7 +89,7 @@ export function formatChapterRead(raw: DomainChapterReadResponse): AppChapterRea
   return {
     id: raw.id ?? '',
     lang: raw.lang ?? '',
-    chapter: raw.chapter ?? 0,
+    chapter: raw.chapter ?? "0",
     pages: raw.pages ?? [],
     prevChapter: parseChapterFromUrl(raw.prev_chapter),
     nextChapter: parseChapterFromUrl(raw.next_chapter),
