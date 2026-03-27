@@ -28,6 +28,6 @@ type LangMetadata struct {
 	Language   string    `json:"language"`
 	Available  int       `json:"available"`
 	Downloaded int       `json:"downloaded"`
-	Chapters   []float64 `json:"chapters"`
+	Chapters   []string  `json:"chapters"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

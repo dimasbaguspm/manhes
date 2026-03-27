@@ -2,7 +2,7 @@ package persistence
 
 import "manga-engine/internal/domain"
 
-func (r *SQLiteRepository) IsChapterDownloaded(slug, lang string, num float64) (bool, error) {
+func (r *SQLiteRepository) IsChapterDownloaded(slug, lang, num string) (bool, error) {
 	var count int
 	err := r.db.QueryRow(
 		`SELECT COUNT(*) FROM ingest_chapters WHERE slug = ? AND language = ? AND chapter_num = ?`,
@@ -14,12 +14,12 @@ func (r *SQLiteRepository) IsChapterDownloaded(slug, lang string, num float64) (
 	return count > 0, nil
 }
 
-func (r *SQLiteRepository) MarkChapterDownloaded(slug, lang string, num float64) error {
+func (r *SQLiteRepository) MarkChapterDownloaded(slug, lang, num string, sortKey float64) error {
 	_, err := r.db.Exec(`
-		INSERT INTO ingest_chapters (slug, language, chapter_num)
-		VALUES (?, ?, ?)
+		INSERT INTO ingest_chapters (slug, language, chapter_num, sort_key)
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT(slug, language, chapter_num) DO NOTHING`,
-		slug, lang, num,
+		slug, lang, num, sortKey,
 	)
 	return err
 }
@@ -44,18 +44,18 @@ func (r *SQLiteRepository) GetDownloadedByLang(slug string) (map[string]int, err
 	return m, rows.Err()
 }
 
-func (r *SQLiteRepository) GetDownloadedChaptersByLang(slug, lang string) ([]float64, error) {
+func (r *SQLiteRepository) GetDownloadedChaptersByLang(slug, lang string) ([]string, error) {
 	rows, err := r.db.Query(
-		`SELECT chapter_num FROM ingest_chapters WHERE slug = ? AND language = ? ORDER BY chapter_num ASC`,
+		`SELECT chapter_num FROM ingest_chapters WHERE slug = ? AND language = ? ORDER BY sort_key ASC`,
 		slug, lang,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var nums []float64
+	var nums []string
 	for rows.Next() {
-		var n float64
+		var n string
 		if err := rows.Scan(&n); err != nil {
 			return nil, err
 		}

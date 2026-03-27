@@ -3,7 +3,6 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -198,13 +197,8 @@ func (h *Handlers) ReadChapter(w http.ResponseWriter, r *http.Request) {
 		httputil.BadRequest(w, "chapter query param is required", nil)
 		return
 	}
-	chapterNum, err := strconv.ParseFloat(chapterStr, 64)
-	if err != nil {
-		httputil.BadRequest(w, "invalid chapter number", err)
-		return
-	}
 
-	result, found, err := h.catalog.ReadChapter(r.Context(), mangaID, lang, chapterNum)
+	result, found, err := h.catalog.ReadChapter(r.Context(), mangaID, lang, chapterStr)
 	if err != nil {
 		h.internalError(w, r, "read chapter", err)
 		return
@@ -217,15 +211,15 @@ func (h *Handlers) ReadChapter(w http.ResponseWriter, r *http.Request) {
 	resp := domain.ChapterReadResponse{
 		ID:      mangaID,
 		Lang:    lang,
-		Chapter: chapterNum,
+		Chapter: chapterStr,
 		Pages:   result.Pages,
 	}
 	if result.PrevChapter != nil {
-		s := fmt.Sprintf("/api/v1/manga/%s/%s/read?chapter=%g", mangaID, lang, *result.PrevChapter)
+		s := fmt.Sprintf("/api/v1/manga/%s/%s/read?chapter=%s", mangaID, lang, *result.PrevChapter)
 		resp.PrevChapter = &s
 	}
 	if result.NextChapter != nil {
-		s := fmt.Sprintf("/api/v1/manga/%s/%s/read?chapter=%g", mangaID, lang, *result.NextChapter)
+		s := fmt.Sprintf("/api/v1/manga/%s/%s/read?chapter=%s", mangaID, lang, *result.NextChapter)
 		resp.NextChapter = &s
 	}
 

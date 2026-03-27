@@ -37,7 +37,7 @@ export interface AppMangaDetail {
 }
 
 export interface AppChapterItem {
-  chapter: number
+  chapter: string
   pageCount: number
   uploadedAt: string
 }
@@ -51,7 +51,7 @@ export interface AppChapterList {
 export interface AppChapterRead {
   id: string
   lang: string
-  chapter: number
+  chapter: string
   pages: string[]
   prevChapter: number | null
   nextChapter: number | null

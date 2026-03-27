@@ -9,7 +9,7 @@ interface MangaReaderContextValue {
   data: AppChapterRead | null
   loading: boolean
   error: string | null
-  chapter: number
+  chapter: string
   mangaId: string
   lang: string
   goNext: () => void
@@ -21,7 +21,7 @@ const MangaReaderContext = createContext<MangaReaderContextValue | null>(null)
 export function MangaReaderDataProvider({ children }: { children: ReactNode }) {
   const { mangaId, lang } = useParams<{ mangaId: string; lang: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const chapter = parseFloat(searchParams.get('chapter') ?? '1')
+  const chapter = searchParams.get('chapter') ?? '1' 
 
   const { data: raw, loading, error } = useAsync(
     () => mangaId && lang ? mangaApi.read(mangaId, lang, chapter) : Promise.reject('Not found'),

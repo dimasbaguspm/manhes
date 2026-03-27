@@ -29,7 +29,7 @@ export const mangaApi = {
     return api.get<DomainChapterListResponse>(`/manga/${mangaId}/${lang}`)
   },
 
-  read(mangaId: string, lang: string, chapter: number) {
+  read(mangaId: string, lang: string, chapter: string) {
     return api.get<DomainChapterReadResponse>(`/manga/${mangaId}/${lang}/read?chapter=${chapter}`)
   },
 }

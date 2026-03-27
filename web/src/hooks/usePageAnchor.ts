@@ -3,13 +3,10 @@ import type { AppChapterRead } from '../types/app'
 import { fnv1a } from '../lib/hashCodec'
 import { throttle } from '../lib/throttle'
 
-function fmtChapter(n: number) {
-  return n % 1 === 0 ? n.toFixed(0) : String(n)
-}
 
 /** Stable, opaque anchor ID derived from mangaId + chapter + page number. */
 export function pageAnchor(mangaId: string, chapter: number, page: number): string {
-  return fnv1a(`${mangaId}--ch${fmtChapter(chapter)}--p${page}`)
+  return fnv1a(`${mangaId}--ch${chapter}--p${page}`)
 }
 
 export type OverlayState = 'show' | 'fade' | 'gone'

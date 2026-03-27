@@ -30,7 +30,7 @@ func (s *SyncService) uploadChapter(ctx context.Context, ref domain.ChapterRef) 
 		slog.String("dict_id", ref.DictionaryID),
 		slog.String("slug", ref.Slug),
 		slog.String("lang", ref.Language),
-		slog.Float64("chapter", ref.ChapterNum),
+		slog.String("chapter", ref.ChapterNum),
 	)
 	upLog.Info("uploading chapter")
 	start := time.Now()

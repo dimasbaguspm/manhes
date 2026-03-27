@@ -152,7 +152,7 @@ func (r *SQLiteRepository) fillMangaDetail(d domain.MangaDetail) (domain.MangaDe
 
 	chRows, err := r.db.Query(
 		`SELECT slug, language, chapter_num, page_count, uploaded, uploaded_at
-		 FROM manga_chapters WHERE slug = ? ORDER BY language, chapter_num`, d.Slug,
+		 FROM manga_chapters WHERE slug = ? ORDER BY language, sort_key`, d.Slug,
 	)
 	if err != nil {
 		return domain.MangaDetail{}, err
@@ -208,17 +208,17 @@ func (r *SQLiteRepository) UpsertLang(slug, lang string, available, downloaded i
 	return err
 }
 
-func (r *SQLiteRepository) UpsertChapter(slug, lang string, num float64, pageCount int) error {
+func (r *SQLiteRepository) UpsertChapter(slug, lang, num string, sortKey float64, pageCount int) error {
 	_, err := r.db.Exec(`
-		INSERT INTO manga_chapters (slug, language, chapter_num, page_count)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(slug, language, chapter_num) DO UPDATE SET page_count=excluded.page_count`,
-		slug, lang, num, pageCount,
+		INSERT INTO manga_chapters (slug, language, chapter_num, sort_key, page_count)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(slug, language, chapter_num) DO UPDATE SET sort_key=excluded.sort_key, page_count=excluded.page_count`,
+		slug, lang, num, sortKey, pageCount,
 	)
 	return err
 }
 
-func (r *SQLiteRepository) MarkChapterUploaded(slug, lang string, num float64) error {
+func (r *SQLiteRepository) MarkChapterUploaded(slug, lang, num string) error {
 	_, err := r.db.Exec(
 		`UPDATE manga_chapters SET uploaded=TRUE, uploaded_at=CURRENT_TIMESTAMP WHERE slug=? AND language=? AND chapter_num=?`,
 		slug, lang, num,
@@ -226,7 +226,7 @@ func (r *SQLiteRepository) MarkChapterUploaded(slug, lang string, num float64) e
 	return err
 }
 
-func (r *SQLiteRepository) UpsertPage(slug, lang string, num float64, idx int, url string) error {
+func (r *SQLiteRepository) UpsertPage(slug, lang, num string, idx int, url string) error {
 	_, err := r.db.Exec(`
 		INSERT INTO chapter_pages (slug, language, chapter_num, page_index, s3_url)
 		VALUES (?, ?, ?, ?, ?)
@@ -236,7 +236,7 @@ func (r *SQLiteRepository) UpsertPage(slug, lang string, num float64, idx int, u
 	return err
 }
 
-func (r *SQLiteRepository) GetChapterPages(slug, lang string, num float64) ([]string, error) {
+func (r *SQLiteRepository) GetChapterPages(slug, lang, num string) ([]string, error) {
 	rows, err := r.db.Query(
 		`SELECT s3_url FROM chapter_pages WHERE slug=? AND language=? AND chapter_num=? ORDER BY page_index`,
 		slug, lang, num,
@@ -259,7 +259,7 @@ func (r *SQLiteRepository) GetChapterPages(slug, lang string, num float64) ([]st
 func (r *SQLiteRepository) GetChaptersByLang(slug, lang string) ([]domain.MangaChapter, error) {
 	rows, err := r.db.Query(
 		`SELECT slug, language, chapter_num, page_count, uploaded_at
-		 FROM manga_chapters WHERE slug=? AND language=? AND uploaded=TRUE ORDER BY chapter_num ASC`,
+		 FROM manga_chapters WHERE slug=? AND language=? AND uploaded=TRUE ORDER BY sort_key ASC`,
 		slug, lang,
 	)
 	if err != nil {
@@ -289,7 +289,7 @@ func (r *SQLiteRepository) GetPendingChapters() ([]domain.ChapterRef, error) {
 		`SELECT mc.slug, mc.language, mc.chapter_num, COALESCE(d.id, '')
 		 FROM manga_chapters mc
 		 LEFT JOIN dictionary d ON d.slug = mc.slug
-		 WHERE mc.uploaded=FALSE ORDER BY mc.slug, mc.language, mc.chapter_num`,
+		 WHERE mc.uploaded=FALSE ORDER BY mc.slug, mc.language, mc.sort_key`,
 	)
 	if err != nil {
 		return nil, err

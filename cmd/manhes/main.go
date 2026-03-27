@@ -78,7 +78,7 @@ func run(cfg *config.Config, log *slog.Logger) error {
 		LibraryPath: cfg.LibraryPath,
 		Interval:    cfg.SyncInterval,
 	})
-	dictSvc := application.NewDictionaryService(repo, reg, dl, s3c, application.DictionaryConfig{
+	dictSvc := application.NewDictionaryService(repo, reg, dl, s3c, producer, application.DictionaryConfig{
 		RefreshInterval: cfg.DictionaryRefreshInterval,
 	})
 	watchlistSvc := application.NewWatchlistService(repo, dictSvc, reg, producer)

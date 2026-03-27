@@ -375,7 +375,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "chapter": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "page_count": {
                     "type": "integer"
@@ -406,7 +406,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "chapter": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "id": {
                     "type": "string"

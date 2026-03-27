@@ -19,16 +19,17 @@ type DictionaryConfig struct {
 }
 
 type DictionaryService struct {
-	repo     domain.Repository
-	registry domain.SourceRegistry
-	dl       domain.Downloader
-	s3c      domain.ObjectStore
-	interval time.Duration
-	log      *slog.Logger
+	repo      domain.Repository
+	registry  domain.SourceRegistry
+	dl        domain.Downloader
+	s3c       domain.ObjectStore
+	publisher domain.EventPublisher
+	interval  time.Duration
+	log       *slog.Logger
 }
 
-func NewDictionaryService(repo domain.Repository, registry domain.SourceRegistry, dl domain.Downloader, s3c domain.ObjectStore, cfg DictionaryConfig) *DictionaryService {
-	return &DictionaryService{repo: repo, registry: registry, dl: dl, s3c: s3c, interval: cfg.RefreshInterval, log: slog.With("service", "dictionary")}
+func NewDictionaryService(repo domain.Repository, registry domain.SourceRegistry, dl domain.Downloader, s3c domain.ObjectStore, publisher domain.EventPublisher, cfg DictionaryConfig) *DictionaryService {
+	return &DictionaryService{repo: repo, registry: registry, dl: dl, s3c: s3c, publisher: publisher, interval: cfg.RefreshInterval, log: slog.With("service", "dictionary")}
 }
 
 func (s *DictionaryService) Search(ctx context.Context, query string) ([]domain.DictionaryEntry, error) {
@@ -141,6 +142,15 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 	if !found {
 		return domain.DictionaryEntry{}, domain.ErrNotFound
 	}
+
+	if err := s.publisher.PublishIngestRequested(ctx, domain.IngestRequested{
+		Slug:         updated.Slug,
+		Sources:      updated.Sources,
+		LangToSource: updated.BestSource,
+	}); err != nil {
+		s.log.Warn("dictionary refresh: publish ingest", "id", id, "err", err)
+	}
+
 	return updated, nil
 }
 

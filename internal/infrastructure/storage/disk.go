@@ -19,7 +19,7 @@ func NewDisk(root string) *DiskStore {
 	return &DiskStore{root: root}
 }
 
-func (d *DiskStore) SavePage(slug, lang string, chapterNum float64, pageIdx int, data []byte, ext string) (string, error) {
+func (d *DiskStore) SavePage(slug, lang string, chapterNum string, pageIdx int, data []byte, ext string) (string, error) {
 	dir := filepath.Join(d.root, slug, lang, ChapterDir(chapterNum))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)

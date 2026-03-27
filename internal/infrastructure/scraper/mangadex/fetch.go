@@ -91,12 +91,14 @@ func (a *Adapter) FetchChapterList(ctx context.Context, mangaID string) ([]domai
 			if ch.Attributes.Chapter == nil {
 				continue
 			}
-			num, err := strconv.ParseFloat(*ch.Attributes.Chapter, 64)
+			numStr := *ch.Attributes.Chapter
+			num, err := strconv.ParseFloat(numStr, 64)
 			if err != nil {
 				continue
 			}
 			all = append(all, domain.Chapter{
-				Number:    num,
+				Number:    numStr,
+				SortKey:   num,
 				Title:     ch.Attributes.Title,
 				Language:  ch.Attributes.TranslatedLanguage,
 				Source:    "mangadex",
@@ -111,7 +113,7 @@ func (a *Adapter) FetchChapterList(ctx context.Context, mangaID string) ([]domai
 		}
 	}
 
-	seen := make(map[float64]struct{})
+	seen := make(map[string]struct{})
 	deduped := all[:0]
 	for _, ch := range all {
 		if _, ok := seen[ch.Number]; ok {

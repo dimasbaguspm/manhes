@@ -262,7 +262,7 @@ func (s *IngestService) downloadChapter(
 		slog.String("dict_id", dictID),
 		slog.String("slug", slug),
 		slog.String("lang", lang),
-		slog.Float64("num", ch.Number),
+		slog.String("num", ch.Number),
 	)
 
 	chLog.Info("downloading chapter")
@@ -292,7 +292,7 @@ func (s *IngestService) downloadChapter(
 	if err := s.disk.WriteChapterManifest(slug, lang, &ch); err != nil {
 		chLog.Warn("write chapter manifest failed", "err", err)
 	}
-	if err := s.repo.MarkChapterDownloaded(slug, lang, ch.Number); err != nil {
+	if err := s.repo.MarkChapterDownloaded(slug, lang, ch.Number, ch.SortKey); err != nil {
 		return fmt.Errorf("mark downloaded: %w", err)
 	}
 
@@ -305,6 +305,7 @@ func (s *IngestService) downloadChapter(
 		Slug:       slug,
 		Language:   lang,
 		ChapterNum: ch.Number,
+		SortKey:    ch.SortKey,
 		PageCount:  len(pageURLs),
 	}); err != nil {
 		s.log.Warn("publish ChapterDownloaded failed", "err", err)

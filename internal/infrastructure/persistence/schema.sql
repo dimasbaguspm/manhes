@@ -23,9 +23,10 @@ CREATE TABLE IF NOT EXISTS watchlist (
 
 -- Ingest chapter state: tracks what has been downloaded
 CREATE TABLE IF NOT EXISTS ingest_chapters (
-    slug        TEXT NOT NULL,
-    language    TEXT NOT NULL,
-    chapter_num REAL NOT NULL,
+    slug          TEXT NOT NULL,
+    language      TEXT NOT NULL,
+    chapter_num   TEXT NOT NULL,
+    sort_key      REAL NOT NULL DEFAULT 0,
     downloaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (slug, language, chapter_num)
 );
@@ -55,7 +56,8 @@ CREATE TABLE IF NOT EXISTS manga_langs (
 CREATE TABLE IF NOT EXISTS manga_chapters (
     slug        TEXT    NOT NULL,
     language    TEXT    NOT NULL,
-    chapter_num REAL    NOT NULL,
+    chapter_num TEXT    NOT NULL,
+    sort_key    REAL    NOT NULL DEFAULT 0,
     page_count  INT     NOT NULL DEFAULT 0,
     uploaded    BOOLEAN NOT NULL DEFAULT FALSE,
     uploaded_at TEXT,
@@ -66,7 +68,7 @@ CREATE TABLE IF NOT EXISTS manga_chapters (
 CREATE TABLE IF NOT EXISTS chapter_pages (
     slug        TEXT NOT NULL,
     language    TEXT NOT NULL,
-    chapter_num REAL NOT NULL,
+    chapter_num TEXT NOT NULL,
     page_index  INT  NOT NULL,
     s3_url      TEXT NOT NULL,
     PRIMARY KEY (slug, language, chapter_num, page_index),

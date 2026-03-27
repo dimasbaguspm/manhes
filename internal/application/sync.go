@@ -46,7 +46,7 @@ func (s *SyncService) HandleChapterDownloaded(ctx context.Context, e domain.Chap
 		slog.String("dict_id", dictID),
 		slog.String("slug", e.Slug),
 		slog.String("lang", e.Language),
-		slog.Float64("chapter", e.ChapterNum),
+		slog.String("chapter", e.ChapterNum),
 		slog.Int("pages", e.PageCount),
 	)
 
@@ -74,7 +74,7 @@ func (s *SyncService) HandleChapterDownloaded(ctx context.Context, e domain.Chap
 		}
 	}
 
-	if err := s.repo.UpsertChapter(e.Slug, e.Language, e.ChapterNum, e.PageCount); err != nil {
+	if err := s.repo.UpsertChapter(e.Slug, e.Language, e.ChapterNum, e.SortKey, e.PageCount); err != nil {
 		return fmt.Errorf("upsert chapter: %w", err)
 	}
 
@@ -181,7 +181,8 @@ func (s *SyncService) syncSlug(ctx context.Context, slug string) error {
 			if pageCount == 0 {
 				continue
 			}
-			if err := s.repo.UpsertChapter(slug, lang, chNum, pageCount); err != nil {
+			sortKey := domain.ParseChapterSortKey(chNum)
+			if err := s.repo.UpsertChapter(slug, lang, chNum, sortKey, pageCount); err != nil {
 				s.log.Warn("sync: upsert chapter", "slug", slug, "lang", lang, "chapter", chNum, "err", err)
 			}
 		}

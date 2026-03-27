@@ -34,6 +34,35 @@ func NewSQLite(path string) (*SQLiteRepository, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
+	// Migrate chapter tables from REAL to TEXT chapter_num (v2 schema).
+	var chNumType string
+	db.QueryRow(`SELECT type FROM pragma_table_info('ingest_chapters') WHERE name='chapter_num'`).Scan(&chNumType)
+	if chNumType == "REAL" || chNumType == "" {
+		db.Exec(`DROP TABLE IF EXISTS chapter_pages`)
+		db.Exec(`DROP TABLE IF EXISTS manga_chapters`)
+		db.Exec(`DROP TABLE IF EXISTS ingest_chapters`)
+		db.Exec(`CREATE TABLE ingest_chapters (
+			slug TEXT NOT NULL, language TEXT NOT NULL, chapter_num TEXT NOT NULL,
+			sort_key REAL NOT NULL DEFAULT 0,
+			downloaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (slug, language, chapter_num))`)
+		db.Exec(`CREATE TABLE manga_chapters (
+			slug TEXT NOT NULL, language TEXT NOT NULL, chapter_num TEXT NOT NULL,
+			sort_key REAL NOT NULL DEFAULT 0,
+			page_count INT NOT NULL DEFAULT 0, uploaded BOOLEAN NOT NULL DEFAULT FALSE,
+			uploaded_at TEXT, PRIMARY KEY (slug, language, chapter_num),
+			FOREIGN KEY (slug, language) REFERENCES manga_langs(slug, language) ON DELETE CASCADE)`)
+		db.Exec(`CREATE TABLE chapter_pages (
+			slug TEXT NOT NULL, language TEXT NOT NULL, chapter_num TEXT NOT NULL,
+			page_index INT NOT NULL, s3_url TEXT NOT NULL,
+			PRIMARY KEY (slug, language, chapter_num, page_index),
+			FOREIGN KEY (slug, language, chapter_num)
+				REFERENCES manga_chapters(slug, language, chapter_num) ON DELETE CASCADE)`)
+	}
+	// Idempotent sort_key addition for tables that exist but may be missing it
+	db.Exec(`ALTER TABLE manga_chapters ADD COLUMN sort_key REAL NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE ingest_chapters ADD COLUMN sort_key REAL NOT NULL DEFAULT 0`)
+
 	// Idempotent column additions — errors are intentionally ignored (column already exists).
 	db.Exec(`ALTER TABLE manga ADD COLUMN uuid        TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE manga ADD COLUMN description TEXT NOT NULL DEFAULT ''`)

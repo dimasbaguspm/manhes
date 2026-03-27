@@ -12,10 +12,10 @@ type Repository interface {
 	ListManga(filter MangaFilter) (MangaPage, error)
 	GetMangaBySlug(slug string) (MangaDetail, bool, error)
 	UpsertLang(slug, lang string, available, downloaded int) error
-	UpsertChapter(slug, lang string, num float64, pageCount int) error
-	MarkChapterUploaded(slug, lang string, num float64) error
-	UpsertPage(slug, lang string, num float64, idx int, url string) error
-	GetChapterPages(slug, lang string, num float64) ([]string, error)
+	UpsertChapter(slug, lang, num string, sortKey float64, pageCount int) error
+	MarkChapterUploaded(slug, lang, num string) error
+	UpsertPage(slug, lang, num string, idx int, url string) error
+	GetChapterPages(slug, lang, num string) ([]string, error)
 	GetChaptersByLang(slug, lang string) ([]MangaChapter, error)
 	GetPendingChapters() ([]ChapterRef, error)
 	HasUploadedChapters(slug string) (bool, error)
@@ -36,10 +36,10 @@ type Repository interface {
 	UpdateLastChecked(slug string, t time.Time) error
 
 	// Ingest chapter state
-	IsChapterDownloaded(slug, lang string, num float64) (bool, error)
-	MarkChapterDownloaded(slug, lang string, num float64) error
+	IsChapterDownloaded(slug, lang, num string) (bool, error)
+	MarkChapterDownloaded(slug, lang, num string, sortKey float64) error
 	GetDownloadedByLang(slug string) (map[string]int, error)
-	GetDownloadedChaptersByLang(slug, lang string) ([]float64, error)
+	GetDownloadedChaptersByLang(slug, lang string) ([]string, error)
 
 	Close() error
 }
@@ -63,7 +63,7 @@ type ObjectStore interface {
 
 // Storer persists manga pages and metadata to disk.
 type Storer interface {
-	SavePage(slug, lang string, chapterNum float64, pageIdx int, data []byte, ext string) (string, error)
+	SavePage(slug, lang string, chapterNum string, pageIdx int, data []byte, ext string) (string, error)
 	SaveCover(slug string, data []byte, ext string) (string, error)
 	WriteMetadata(slug string, m *Metadata) error
 	ReadMetadata(slug string) (*Metadata, error)

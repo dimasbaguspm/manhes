@@ -11,7 +11,7 @@
  */
 
 export interface DomainChapterItem {
-  chapter?: number;
+  chapter?: string;
   page_count?: number;
   uploaded_at?: string;
 }
@@ -23,7 +23,7 @@ export interface DomainChapterListResponse {
 }
 
 export interface DomainChapterReadResponse {
-  chapter?: number;
+  chapter?: string;
   id?: string;
   lang?: string;
   next_chapter?: string;

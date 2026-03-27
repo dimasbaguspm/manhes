@@ -3,17 +3,25 @@ package storage
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
-func ChapterDir(num float64) string {
-	whole := int(num)
-	frac := num - math.Trunc(num)
-	if frac == 0 {
-		return fmt.Sprintf("ch-%03d", whole)
+func ChapterDir(num string) string {
+	// For plain numeric chapters ("78", "78.5"), keep the legacy ch-NNN format
+	// so existing on-disk directories remain valid.
+	f, err := strconv.ParseFloat(num, 64)
+	if err == nil {
+		whole := int(f)
+		frac := f - math.Trunc(f)
+		if frac == 0 {
+			return fmt.Sprintf("ch-%03d", whole)
+		}
+		fracPart := strings.TrimPrefix(fmt.Sprintf("%.1f", frac), "0.")
+		return fmt.Sprintf("ch-%03d-%s", whole, fracPart)
 	}
-	fracPart := strings.TrimPrefix(fmt.Sprintf("%.1f", frac), "0.")
-	return fmt.Sprintf("ch-%03d-%s", whole, fracPart)
+	// Season-encoded or other non-numeric: slugify
+	return Slugify(num)
 }
 
 func PageFile(idx int, ext string) string {

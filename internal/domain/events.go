@@ -13,6 +13,7 @@ type IngestRequested struct {
 type ChapterDownloaded struct {
 	Slug       string  `json:"slug"`
 	Language   string  `json:"language"`
-	ChapterNum float64 `json:"chapter_num"`
+	ChapterNum string  `json:"chapter_num"`
+	SortKey    float64 `json:"sort_key"`
 	PageCount  int     `json:"page_count"`
 }

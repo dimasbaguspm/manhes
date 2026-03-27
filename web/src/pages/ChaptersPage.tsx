@@ -30,8 +30,6 @@ export default function ChaptersPage() {
 
   if (!data) return null
 
-  const sorted = [...data.chapters].sort((a, b) => b.chapter - a.chapter)
-
   return (
     <div>
       <div className="mb-4 text-sm text-gray-500">
@@ -74,14 +72,14 @@ export default function ChaptersPage() {
       </div>
 
       <div className="space-y-1.5">
-        {sorted.map(ch => (
+        {[...data.chapters].map(ch => (
           <Link
             key={ch.chapter}
             to={DEEP_LINKS.MANGA_READER({ mangaId: mangaId!, lang: lang!, chapter: ch.chapter })}
             className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 transition hover:border-gray-600 hover:bg-gray-800"
           >
             <span className="font-medium text-gray-100">
-              Chapter {fmtChapter(ch.chapter)}
+              Chapter {ch.chapter}
             </span>
             <div className="flex items-center gap-4 text-xs text-gray-500">
               <span>{ch.pageCount} pages</span>

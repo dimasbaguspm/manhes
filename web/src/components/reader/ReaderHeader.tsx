@@ -1,8 +1,6 @@
 import { Link } from 'react-router-dom'
 
-function fmtChapter(n: number) {
-  return n % 1 === 0 ? n.toFixed(0) : String(n)
-}
+
 
 const navBtn =
   'rounded border border-gray-700 px-3 py-1 text-xs text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
@@ -47,7 +45,7 @@ export function ReaderHeader({
 
         <div className="min-w-0 truncate text-center text-sm text-gray-300">
           <span className="uppercase">{lang}</span>
-          {' — '}Ch.{fmtChapter(chapter)}
+          {' — '} {chapter}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">

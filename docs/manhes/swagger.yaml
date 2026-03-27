@@ -5,7 +5,7 @@ definitions:
   domain.ChapterItem:
     properties:
       chapter:
-        type: number
+        type: string
       page_count:
         type: integer
       uploaded_at:
@@ -25,7 +25,7 @@ definitions:
   domain.ChapterReadResponse:
     properties:
       chapter:
-        type: number
+        type: string
       id:
         type: string
       lang:

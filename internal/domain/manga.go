@@ -47,7 +47,7 @@ type ChapterRef struct {
 	DictionaryID string // used as S3 path prefix; falls back to Slug if empty
 	Slug         string
 	Language     string
-	ChapterNum   float64
+	ChapterNum   string
 }
 
 // MangaDetail includes full manga info with languages and chapters.
@@ -70,7 +70,7 @@ type MangaLang struct {
 type MangaChapter struct {
 	Slug       string
 	Language   string
-	ChapterNum float64
+	ChapterNum string
 	PageCount  int
 	Uploaded   bool
 	UploadedAt *time.Time
@@ -79,8 +79,8 @@ type MangaChapter struct {
 // ChapterRead holds the result of reading a chapter: page URLs and prev/next navigation.
 type ChapterRead struct {
 	Pages       []string
-	PrevChapter *float64
-	NextChapter *float64
+	PrevChapter *string
+	NextChapter *string
 }
 
 // CatalogQuerier is the read-only manga catalog port used by the HTTP handler.
@@ -88,7 +88,7 @@ type CatalogQuerier interface {
 	ListManga(ctx context.Context, filter MangaFilter) (MangaPage, error)
 	GetManga(ctx context.Context, dictionaryID string) (MangaDetail, bool, error)
 	GetChaptersByLang(ctx context.Context, dictionaryID, lang string) ([]MangaChapter, bool, error)
-	ReadChapter(ctx context.Context, dictionaryID, lang string, num float64) (ChapterRead, bool, error)
+	ReadChapter(ctx context.Context, dictionaryID, lang string, num string) (ChapterRead, bool, error)
 }
 
 // Pagination is a reusable pagination envelope for list responses.
@@ -146,7 +146,7 @@ type MangaDetailResponse struct {
 
 // ChapterItem is one chapter entry in a chapter list response.
 type ChapterItem struct {
-	Chapter    float64    `json:"chapter"`
+	Chapter    string     `json:"chapter"`
 	PageCount  int        `json:"page_count"`
 	UploadedAt *time.Time `json:"uploaded_at"`
 }
@@ -162,7 +162,7 @@ type ChapterListResponse struct {
 type ChapterReadResponse struct {
 	ID          string   `json:"id"`
 	Lang        string   `json:"lang"`
-	Chapter     float64  `json:"chapter"`
+	Chapter     string   `json:"chapter"`
 	Pages       []string `json:"pages"`
 	PrevChapter *string  `json:"prev_chapter"`
 	NextChapter *string  `json:"next_chapter"`

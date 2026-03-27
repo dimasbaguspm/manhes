@@ -67,7 +67,7 @@ func (s *CatalogService) GetChaptersByLang(ctx context.Context, dictionaryID, la
 	return chapters, true, err
 }
 
-func (s *CatalogService) ReadChapter(ctx context.Context, dictionaryID, lang string, num float64) (domain.ChapterRead, bool, error) {
+func (s *CatalogService) ReadChapter(ctx context.Context, dictionaryID, lang string, num string) (domain.ChapterRead, bool, error) {
 	dictEntry, found, err := s.repo.GetDictionary(dictionaryID)
 	if err != nil {
 		return domain.ChapterRead{}, false, err
