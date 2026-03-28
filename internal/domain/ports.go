@@ -8,38 +8,38 @@ import (
 // Repository is the single port for all DB operations.
 type Repository interface {
 	// Catalog
-	UpsertManga(m Manga) error
-	ListManga(filter MangaFilter) (MangaPage, error)
-	GetMangaBySlug(slug string) (MangaDetail, bool, error)
-	UpsertLang(slug, lang string, available, downloaded int) error
-	UpsertChapter(slug, lang, num string, sortKey float64, pageCount int) error
-	MarkChapterUploaded(slug, lang, num string) error
-	UpsertPage(slug, lang, num string, idx int, url string) error
-	GetChapterPages(slug, lang, num string) ([]string, error)
-	GetChaptersByLang(slug, lang string) ([]MangaChapter, error)
-	GetPendingChapters() ([]ChapterRef, error)
-	HasUploadedChapters(slug string) (bool, error)
-	HasPendingChapters(slug string) (bool, error)
+	UpsertManga(ctx context.Context, m Manga) error
+	ListManga(ctx context.Context, filter MangaFilter) (MangaPage, error)
+	GetMangaBySlug(ctx context.Context, slug string) (MangaDetail, bool, error)
+	UpsertLang(ctx context.Context, slug, lang string, available, downloaded int) error
+	UpsertChapter(ctx context.Context, slug, lang, num string, sortKey float64, pageCount int) error
+	MarkChapterUploaded(ctx context.Context, slug, lang, num string) error
+	UpsertPage(ctx context.Context, slug, lang, num string, idx int, url string) error
+	GetChapterPages(ctx context.Context, slug, lang, num string) ([]string, error)
+	GetChaptersByLang(ctx context.Context, slug, lang string) ([]MangaChapter, error)
+	GetPendingChapters(ctx context.Context) ([]ChapterRef, error)
+	HasUploadedChapters(ctx context.Context, slug string) (bool, error)
+	HasPendingChapters(ctx context.Context, slug string) (bool, error)
 
 	// Dictionary
-	UpsertDictionary(entry DictionaryEntry) error
-	GetDictionary(id string) (DictionaryEntry, bool, error)
-	GetDictionaryBySlug(slug string) (DictionaryEntry, bool, error)
-	ListDictionary(filter DictionaryFilter) (DictionaryPage, error)
-	SetDictionaryState(id string, state MangaState) error
-	SetDictionaryStateBySlug(slug string, state MangaState) error
+	UpsertDictionary(ctx context.Context, entry DictionaryEntry) error
+	GetDictionary(ctx context.Context, id string) (DictionaryEntry, bool, error)
+	GetDictionaryBySlug(ctx context.Context, slug string) (DictionaryEntry, bool, error)
+	ListDictionary(ctx context.Context, filter DictionaryFilter) (DictionaryPage, error)
+	SetDictionaryState(ctx context.Context, id string, state MangaState) error
+	SetDictionaryStateBySlug(ctx context.Context, slug string, state MangaState) error
 
 	// Watchlist
-	ListWatchlist() ([]WatchlistEntry, error)
-	AddWatchlist(entry WatchlistEntry) error
-	RemoveWatchlist(slug string) error
-	UpdateLastChecked(slug string, t time.Time) error
+	ListWatchlist(ctx context.Context) ([]WatchlistEntry, error)
+	AddWatchlist(ctx context.Context, entry WatchlistEntry) error
+	RemoveWatchlist(ctx context.Context, slug string) error
+	UpdateLastChecked(ctx context.Context, slug string, t time.Time) error
 
 	// Ingest chapter state
-	IsChapterDownloaded(slug, lang, num string) (bool, error)
-	MarkChapterDownloaded(slug, lang, num string, sortKey float64) error
-	GetDownloadedByLang(slug string) (map[string]int, error)
-	GetDownloadedChaptersByLang(slug, lang string) ([]string, error)
+	IsChapterDownloaded(ctx context.Context, slug, lang, num string) (bool, error)
+	MarkChapterDownloaded(ctx context.Context, slug, lang, num string, sortKey float64) error
+	GetDownloadedByLang(ctx context.Context, slug string) (map[string]int, error)
+	GetDownloadedChaptersByLang(ctx context.Context, slug, lang string) ([]string, error)
 
 	Close() error
 }

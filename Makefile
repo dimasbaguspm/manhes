@@ -2,18 +2,19 @@
         dev-backend dev-web dev-reset \
         staging-up staging-down \
         prod-build \
-        test lint swagger
+        test lint swagger sqlc
 
 ## Setup — install Go tools and frontend dependencies
 init:
 	go install github.com/air-verse/air@latest
 	go install github.com/swaggo/swag/cmd/swag@latest
+	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	go mod download all
 	cd web && npm install
 	mkdir -p library
 
 ## Development
-# Start infra (Redpanda + MinIO) and the Go API with hot-reload.
+# Migrations run automatically in-app via golang-migrate. sqlc runs via .air.toml pre_cmd.
 dev-backend:
 	docker compose -f infra/docker-compose.dev.yml --env-file .env up --build
 
@@ -21,11 +22,10 @@ dev-backend:
 dev-web:
 	cd web && npm run gen:types && npm run dev
 
-# Wipe all local state: Docker volumes, SQLite db, downloaded library files.
+# Wipe all local state: Docker volumes (including MySQL data) and downloaded library files.
 dev-reset:
 	docker compose -f infra/docker-compose.dev.yml --env-file .env down -v
 	docker run --rm -v "$(PWD)/library:/library" alpine sh -c "rm -rf /library/*"
-	rm -f manhes.db manhes.db-shm manhes.db-wal
 
 ## Staging — production image tested locally (full stack: infra + app)
 staging-up:
@@ -49,3 +49,9 @@ lint:
 
 swagger:
 	swag init -g ./cmd/manhes/main.go -o ./docs/manhes --packageName manhes --parseInternal --quiet
+
+## Database
+MYSQL_DSN ?= $(DB_USER):$(DB_PASS)@tcp(localhost:3306)/$(DB_NAME)?parseTime=true&charset=utf8mb4
+
+sqlc:
+	sqlc generate

@@ -51,12 +51,12 @@ func run(cfg *config.Config, log *slog.Logger) error {
 
 	log.Info("[Core] starting", "addr", cfg.ListenAddr, "log_level", cfg.LogLevel)
 
-	repo, err := persistence.NewSQLite(cfg.DBPath)
+	repo, err := persistence.NewMySQL(ctx, cfg.Database)
 	if err != nil {
 		return fmt.Errorf("db: %w", err)
 	}
 	defer repo.Close()
-	log.Info("[DB] connected", "path", cfg.DBPath)
+	log.Info("[DB] connected", "host", cfg.Database.Host, "port", cfg.Database.Port, "db", cfg.Database.Name)
 
 	s3c, err := s3.New(ctx, cfg.S3)
 	if err != nil {

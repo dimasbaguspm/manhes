@@ -27,7 +27,7 @@ func (s *WatchlistService) RunDaemon(ctx context.Context) {
 // not yet available (fetching/uploading/unavailable), then immediately triggers
 // checkDue so they are re-ingested instead of waiting up to retryInterval.
 func (s *WatchlistService) recoverStuck(ctx context.Context) {
-	entries, err := s.repo.ListWatchlist()
+	entries, err := s.repo.ListWatchlist(ctx)
 	if err != nil {
 		s.log.Error("watchlist daemon: recover stuck: list watchlist", "err", err)
 		return
@@ -37,7 +37,7 @@ func (s *WatchlistService) recoverStuck(ctx context.Context) {
 		if e.DictionaryID == "" {
 			continue
 		}
-		dictEntry, found, err := s.repo.GetDictionary(e.DictionaryID)
+		dictEntry, found, err := s.repo.GetDictionary(ctx, e.DictionaryID)
 		if err != nil || !found {
 			continue
 		}
@@ -48,7 +48,7 @@ func (s *WatchlistService) recoverStuck(ctx context.Context) {
 			"slug", e.Slug,
 			"state", string(dictEntry.State),
 		)
-		if err := s.repo.UpdateLastChecked(e.Slug, time.Time{}); err != nil {
+		if err := s.repo.UpdateLastChecked(ctx, e.Slug, time.Time{}); err != nil {
 			s.log.Warn("watchlist daemon: reset last checked", "slug", e.Slug, "err", err)
 		}
 		recovered++
@@ -60,7 +60,7 @@ func (s *WatchlistService) recoverStuck(ctx context.Context) {
 }
 
 func (s *WatchlistService) checkDue(ctx context.Context) {
-	entries, err := s.repo.ListWatchlist()
+	entries, err := s.repo.ListWatchlist(ctx)
 	if err != nil {
 		s.log.Error("watchlist daemon: list watchlist", "err", err)
 		return
@@ -69,10 +69,10 @@ func (s *WatchlistService) checkDue(ctx context.Context) {
 	for _, e := range entries {
 		// If the dictionary is now available, the ingest is fulfilled — clean up.
 		if e.DictionaryID != "" {
-			dictEntry, found, err := s.repo.GetDictionary(e.DictionaryID)
+			dictEntry, found, err := s.repo.GetDictionary(ctx, e.DictionaryID)
 			if err == nil && found && dictEntry.State == domain.StateAvailable {
 				s.log.Info("watchlist daemon: fulfilled, removing", "slug", e.Slug)
-				if err := s.repo.RemoveWatchlist(e.Slug); err != nil {
+				if err := s.repo.RemoveWatchlist(ctx, e.Slug); err != nil {
 					s.log.Warn("watchlist daemon: remove fulfilled entry", "slug", e.Slug, "err", err)
 				}
 				continue
@@ -99,11 +99,11 @@ func (s *WatchlistService) checkDue(ctx context.Context) {
 			continue
 		}
 		if e.DictionaryID != "" {
-			if err := s.repo.SetDictionaryState(e.DictionaryID, domain.StateFetching); err != nil {
+			if err := s.repo.SetDictionaryState(ctx, e.DictionaryID, domain.StateFetching); err != nil {
 				s.log.Warn("watchlist daemon: set dictionary state fetching", "slug", e.Slug, "err", err)
 			}
 		}
-		if err := s.repo.UpdateLastChecked(e.Slug, now); err != nil {
+		if err := s.repo.UpdateLastChecked(ctx, e.Slug, now); err != nil {
 			s.log.Warn("watchlist daemon: update last checked", "slug", e.Slug, "err", err)
 		}
 	}

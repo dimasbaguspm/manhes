@@ -34,7 +34,7 @@ func NewWatchlistService(
 }
 
 func (s *WatchlistService) AddByDictionaryID(ctx context.Context, dictionaryID string) (string, error) {
-	entry, found, err := s.repo.GetDictionary(dictionaryID)
+	entry, found, err := s.repo.GetDictionary(ctx, dictionaryID)
 	if err != nil {
 		return "", err
 	}
@@ -48,10 +48,10 @@ func (s *WatchlistService) AddByDictionaryID(ctx context.Context, dictionaryID s
 		DictionaryID: dictionaryID,
 		Sources:      entry.Sources,
 	}
-	if err := s.repo.AddWatchlist(wl); err != nil {
+	if err := s.repo.AddWatchlist(ctx, wl); err != nil {
 		return "", err
 	}
-	if err := s.repo.SetDictionaryState(dictionaryID, domain.StateFetching); err != nil {
+	if err := s.repo.SetDictionaryState(ctx, dictionaryID, domain.StateFetching); err != nil {
 		s.log.Warn("watchlist add: set dictionary state fetching", "id", dictionaryID, "err", err)
 	}
 	go s.dict.refresh(context.Background(), dictionaryID)
@@ -66,7 +66,7 @@ func (s *WatchlistService) AddByDictionaryID(ctx context.Context, dictionaryID s
 
 func (s *WatchlistService) resolveSourcesForEntry(_ context.Context, entry *domain.WatchlistEntry) (sources, langToSource map[string]string, err error) {
 	if entry.DictionaryID != "" {
-		dictEntry, found, err := s.repo.GetDictionary(entry.DictionaryID)
+		dictEntry, found, err := s.repo.GetDictionary(context.Background(), entry.DictionaryID)
 		if err != nil {
 			return nil, nil, err
 		}

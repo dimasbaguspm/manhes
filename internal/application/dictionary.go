@@ -78,7 +78,7 @@ func (s *DictionaryService) Search(ctx context.Context, query string) ([]domain.
 // scrapers for any new sources matching the entry's title. It then persists the
 // merged result and returns the updated entry.
 func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.DictionaryEntry, error) {
-	entry, found, err := s.repo.GetDictionary(id)
+	entry, found, err := s.repo.GetDictionary(ctx, id)
 	if err != nil {
 		return domain.DictionaryEntry{}, err
 	}
@@ -113,7 +113,7 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 	}
 
 	if newSources {
-		if err := s.repo.UpsertDictionary(entry); err != nil {
+		if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
 			s.log.Warn("dictionary refresh: upsert new sources", "id", id, "err", err)
 		}
 	}
@@ -128,13 +128,13 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 	// were found.
 	// UpsertManga auto-stamps synced_at = CURRENT_TIMESTAMP, recording that
 	// we fetched from the source regardless of whether new chapters exist.
-	if manga, found, err := s.repo.GetMangaBySlug(entry.Slug); err == nil && found {
-		if err := s.repo.UpsertManga(manga.Manga); err != nil {
+	if manga, found, err := s.repo.GetMangaBySlug(ctx, entry.Slug); err == nil && found {
+		if err := s.repo.UpsertManga(ctx, manga.Manga); err != nil {
 			s.log.Warn("dictionary refresh: update manga updated_at", "slug", entry.Slug, "err", err)
 		}
 	}
 
-	updated, found, err := s.repo.GetDictionary(id)
+	updated, found, err := s.repo.GetDictionary(ctx, id)
 	if err != nil {
 		return domain.DictionaryEntry{}, err
 	}
@@ -164,12 +164,12 @@ func (s *DictionaryService) Upsert(ctx context.Context, slug, title string, sour
 		State:       domain.StateUnavailable,
 		CreatedAt:   time.Now(),
 	}
-	if err := s.repo.UpsertDictionary(entry); err != nil {
+	if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
 		return domain.DictionaryEntry{}, err
 	}
 
 	// Read back to get canonical entry: actual ID, merged sources, preserved state/stats.
-	result, found, err := s.repo.GetDictionaryBySlug(slug)
+	result, found, err := s.repo.GetDictionaryBySlug(ctx, slug)
 	if err != nil {
 		return domain.DictionaryEntry{}, err
 	}

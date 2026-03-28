@@ -45,7 +45,7 @@ func (s *IngestService) Ingest(ctx context.Context, e domain.IngestRequested) er
 	}
 
 	var dictID string
-	if entry, found, err := s.repo.GetDictionaryBySlug(e.Slug); err == nil && found {
+	if entry, found, err := s.repo.GetDictionaryBySlug(ctx, e.Slug); err == nil && found {
 		dictID = entry.ID
 	}
 
@@ -109,11 +109,11 @@ func (s *IngestService) Ingest(ctx context.Context, e domain.IngestRequested) er
 		slog.String("slug", e.Slug),
 	)
 
-	if err := s.writeMetadata(e.Slug, primaryManga, mergedAvail); err != nil {
+	if err := s.writeMetadata(ctx, e.Slug, primaryManga, mergedAvail); err != nil {
 		return err
 	}
 	for lang, avail := range mergedAvail {
-		if err := s.writeLangMetadata(e.Slug, lang, avail); err != nil {
+		if err := s.writeLangMetadata(ctx, e.Slug, lang, avail); err != nil {
 			s.log.Warn("final lang metadata write failed", "lang", lang, "err", err)
 		}
 	}
@@ -122,7 +122,7 @@ func (s *IngestService) Ingest(ctx context.Context, e domain.IngestRequested) er
 	// source, regardless of whether new chapters were downloaded.
 	now := time.Now()
 	if primaryManga != nil {
-		if err := s.repo.UpsertManga(domain.Manga{
+		if err := s.repo.UpsertManga(ctx, domain.Manga{
 			Slug:        e.Slug,
 			Title:       primaryManga.Title,
 			Description: primaryManga.Description,
@@ -135,9 +135,9 @@ func (s *IngestService) Ingest(ctx context.Context, e domain.IngestRequested) er
 		}
 	}
 	if dictID != "" {
-		if entry, found, err := s.repo.GetDictionary(dictID); err == nil && found {
+		if entry, found, err := s.repo.GetDictionary(ctx, dictID); err == nil && found {
 			entry.RefreshedAt = &now
-			if err := s.repo.UpsertDictionary(entry); err != nil {
+			if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
 				s.log.Warn("ingest: stamp dictionary refreshed_at", "dict_id", dictID, "err", err)
 			}
 		}
@@ -148,17 +148,17 @@ func (s *IngestService) Ingest(ctx context.Context, e domain.IngestRequested) er
 			"slug", e.Slug, "dict_id", dictID,
 		)
 	} else {
-		if err := s.repo.SetDictionaryStateBySlug(e.Slug, domain.StateUploading); err != nil {
+		if err := s.repo.SetDictionaryStateBySlug(ctx, e.Slug, domain.StateUploading); err != nil {
 			s.log.Warn("ingest: set state uploading", "slug", e.Slug, "err", err)
 		}
 		// If every chapter was already uploaded (no new downloads this run),
 		// no ChapterDownloaded events will fire and the sync service will never
 		// advance the state. Transition directly to available in that case.
-		hasPending, err := s.repo.HasPendingChapters(e.Slug)
+		hasPending, err := s.repo.HasPendingChapters(ctx, e.Slug)
 		if err != nil {
 			s.log.Warn("ingest: check pending chapters", "slug", e.Slug, "err", err)
 		} else if !hasPending {
-			if err := s.repo.SetDictionaryStateBySlug(e.Slug, domain.StateAvailable); err != nil {
+			if err := s.repo.SetDictionaryStateBySlug(ctx, e.Slug, domain.StateAvailable); err != nil {
 				s.log.Warn("ingest: set state available (no pending)", "slug", e.Slug, "err", err)
 			}
 		}
@@ -214,9 +214,9 @@ func (s *IngestService) runSource(
 	}
 	s.log.Info("chapter list fetched", "dict_id", dictID, "source", src.Source(), "total", len(chapters))
 
-	s.writeMetadataLocked(slug, manga, availByLang)
+	s.writeMetadataLocked(ctx, slug, manga, availByLang)
 	for lang, avail := range availByLang {
-		s.writeLangMetadataLocked(slug, lang, avail)
+		s.writeLangMetadataLocked(ctx, slug, lang, avail)
 	}
 
 	hadErrors := false
@@ -248,7 +248,7 @@ func (s *IngestService) downloadChapter(
 	manga *domain.Manga,
 	availByLang map[string]int,
 ) error {
-	done, err := s.repo.IsChapterDownloaded(slug, lang, ch.Number)
+	done, err := s.repo.IsChapterDownloaded(ctx, slug, lang, ch.Number)
 	if err != nil {
 		return fmt.Errorf("check chapter: %w", err)
 	}
@@ -292,14 +292,14 @@ func (s *IngestService) downloadChapter(
 	if err := s.disk.WriteChapterManifest(slug, lang, &ch); err != nil {
 		chLog.Warn("write chapter manifest failed", "err", err)
 	}
-	if err := s.repo.MarkChapterDownloaded(slug, lang, ch.Number, ch.SortKey); err != nil {
+	if err := s.repo.MarkChapterDownloaded(ctx, slug, lang, ch.Number, ch.SortKey); err != nil {
 		return fmt.Errorf("mark downloaded: %w", err)
 	}
 
 	chLog.Info("chapter done", slog.Int("pages", total), slog.Int64("duration_ms", time.Since(start).Milliseconds()))
 
-	s.writeMetadataLocked(slug, manga, availByLang)
-	s.writeLangMetadataLocked(slug, lang, availByLang[lang])
+	s.writeMetadataLocked(ctx, slug, manga, availByLang)
+	s.writeLangMetadataLocked(ctx, slug, lang, availByLang[lang])
 
 	if err := s.publisher.PublishChapterDownloaded(ctx, domain.ChapterDownloaded{
 		Slug:       slug,

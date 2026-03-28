@@ -19,11 +19,11 @@ func NewCatalogService(repo domain.Repository) *CatalogService {
 }
 
 func (s *CatalogService) ListManga(ctx context.Context, filter domain.MangaFilter) (domain.MangaPage, error) {
-	return s.repo.ListManga(filter)
+	return s.repo.ListManga(ctx, filter)
 }
 
 func (s *CatalogService) GetManga(ctx context.Context, dictionaryID string) (domain.MangaDetail, bool, error) {
-	dictEntry, found, err := s.repo.GetDictionary(dictionaryID)
+	dictEntry, found, err := s.repo.GetDictionary(ctx, dictionaryID)
 	if err != nil {
 		return domain.MangaDetail{}, false, err
 	}
@@ -31,7 +31,7 @@ func (s *CatalogService) GetManga(ctx context.Context, dictionaryID string) (dom
 		return domain.MangaDetail{}, false, nil
 	}
 
-	detail, found, err := s.repo.GetMangaBySlug(dictEntry.Slug)
+	detail, found, err := s.repo.GetMangaBySlug(ctx, dictEntry.Slug)
 	if err != nil {
 		return domain.MangaDetail{}, false, err
 	}
@@ -56,19 +56,19 @@ func (s *CatalogService) GetManga(ctx context.Context, dictionaryID string) (dom
 }
 
 func (s *CatalogService) GetChaptersByLang(ctx context.Context, dictionaryID, lang string) ([]domain.MangaChapter, bool, error) {
-	dictEntry, found, err := s.repo.GetDictionary(dictionaryID)
+	dictEntry, found, err := s.repo.GetDictionary(ctx, dictionaryID)
 	if err != nil {
 		return nil, false, err
 	}
 	if !found {
 		return nil, false, nil
 	}
-	chapters, err := s.repo.GetChaptersByLang(dictEntry.Slug, lang)
+	chapters, err := s.repo.GetChaptersByLang(ctx, dictEntry.Slug, lang)
 	return chapters, true, err
 }
 
 func (s *CatalogService) ReadChapter(ctx context.Context, dictionaryID, lang string, num string) (domain.ChapterRead, bool, error) {
-	dictEntry, found, err := s.repo.GetDictionary(dictionaryID)
+	dictEntry, found, err := s.repo.GetDictionary(ctx, dictionaryID)
 	if err != nil {
 		return domain.ChapterRead{}, false, err
 	}
@@ -83,12 +83,12 @@ func (s *CatalogService) ReadChapter(ctx context.Context, dictionaryID, lang str
 	)
 	g.Go(func() error {
 		var err error
-		pages, err = s.repo.GetChapterPages(dictEntry.Slug, lang, num)
+		pages, err = s.repo.GetChapterPages(ctx, dictEntry.Slug, lang, num)
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		chapters, err = s.repo.GetChaptersByLang(dictEntry.Slug, lang)
+		chapters, err = s.repo.GetChaptersByLang(ctx, dictEntry.Slug, lang)
 		return err
 	})
 	if err := g.Wait(); err != nil {

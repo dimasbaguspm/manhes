@@ -12,7 +12,6 @@ type Config struct {
 	Env         string // dev | prod
 	ListenAddr  string
 	LogLevel    string
-	DBPath      string
 	LibraryPath string
 
 	IngestInterval            time.Duration
@@ -22,6 +21,7 @@ type Config struct {
 
 	DownloaderTimeout time.Duration
 
+	Database DatabaseConfig
 	S3       S3Config
 	Kafka    KafkaConfig
 	Mangadex MangadexConfig
@@ -36,10 +36,9 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Env:        envStr("APP_ENV", "dev"),
-		ListenAddr: ":8080",
-		LogLevel:   "info",
-		DBPath:      "./manhes.db",
+		Env:         envStr("APP_ENV", "dev"),
+		ListenAddr:  ":8080",
+		LogLevel:    "info",
 		LibraryPath: "./library",
 
 		IngestInterval:            envDuration("INGEST_INTERVAL", 30*time.Minute),
@@ -49,6 +48,7 @@ func Load() (*Config, error) {
 
 		DownloaderTimeout: envDuration("DOWNLOADER_TIMEOUT", 30*time.Second),
 
+		Database: loadDatabaseConfig(),
 		S3:       loadS3Config(),
 		Kafka:    loadKafkaConfig(),
 		Mangadex: loadMangadexConfig(),

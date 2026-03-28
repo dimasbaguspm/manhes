@@ -56,7 +56,7 @@ func (s *SyncService) HandleChapterDownloaded(ctx context.Context, e domain.Chap
 	}
 	if m != nil {
 		coverURL, _ := s.uploadCover(ctx, e.Slug, dictID)
-		if err := s.repo.UpsertManga(domain.Manga{
+		if err := s.repo.UpsertManga(ctx, domain.Manga{
 			Slug:        e.Slug,
 			Title:       m.Title,
 			Description: m.Description,
@@ -68,13 +68,13 @@ func (s *SyncService) HandleChapterDownloaded(ctx context.Context, e domain.Chap
 			return fmt.Errorf("upsert manga: %w", err)
 		}
 		if stat, ok := m.Languages[e.Language]; ok {
-			if err := s.repo.UpsertLang(e.Slug, e.Language, stat.Available, stat.Downloaded); err != nil {
+			if err := s.repo.UpsertLang(ctx, e.Slug, e.Language, stat.Available, stat.Downloaded); err != nil {
 				s.log.Warn("upsert lang", "err", err)
 			}
 		}
 	}
 
-	if err := s.repo.UpsertChapter(e.Slug, e.Language, e.ChapterNum, e.SortKey, e.PageCount); err != nil {
+	if err := s.repo.UpsertChapter(ctx, e.Slug, e.Language, e.ChapterNum, e.SortKey, e.PageCount); err != nil {
 		return fmt.Errorf("upsert chapter: %w", err)
 	}
 
@@ -120,7 +120,7 @@ func (s *SyncService) tick(ctx context.Context) {
 		}
 	}
 
-	pending, err := s.repo.GetPendingChapters()
+	pending, err := s.repo.GetPendingChapters(ctx)
 	if err != nil {
 		s.log.Error("sync: get pending chapters", "err", err)
 		return
@@ -147,7 +147,7 @@ func (s *SyncService) syncSlug(ctx context.Context, slug string) error {
 	}
 
 	coverURL, _ := s.uploadCover(ctx, slug, s.dictIDForSlug(slug))
-	if err := s.repo.UpsertManga(domain.Manga{
+	if err := s.repo.UpsertManga(ctx, domain.Manga{
 		Slug:        slug,
 		Title:       m.Title,
 		Description: m.Description,
@@ -160,7 +160,7 @@ func (s *SyncService) syncSlug(ctx context.Context, slug string) error {
 	}
 
 	for lang, stat := range m.Languages {
-		if err := s.repo.UpsertLang(slug, lang, stat.Available, stat.Downloaded); err != nil {
+		if err := s.repo.UpsertLang(ctx, slug, lang, stat.Available, stat.Downloaded); err != nil {
 			s.log.Warn("sync: upsert lang", "slug", slug, "lang", lang, "err", err)
 			continue
 		}
@@ -182,7 +182,7 @@ func (s *SyncService) syncSlug(ctx context.Context, slug string) error {
 				continue
 			}
 			sortKey := domain.ParseChapterSortKey(chNum)
-			if err := s.repo.UpsertChapter(slug, lang, chNum, sortKey, pageCount); err != nil {
+			if err := s.repo.UpsertChapter(ctx, slug, lang, chNum, sortKey, pageCount); err != nil {
 				s.log.Warn("sync: upsert chapter", "slug", slug, "lang", lang, "chapter", chNum, "err", err)
 			}
 		}
@@ -209,7 +209,7 @@ func (s *SyncService) syncSlug(ctx context.Context, slug string) error {
 }
 
 func (s *SyncService) dictIDForSlug(slug string) string {
-	entry, found, err := s.repo.GetDictionaryBySlug(slug)
+	entry, found, err := s.repo.GetDictionaryBySlug(context.Background(), slug)
 	if err != nil || !found {
 		return ""
 	}

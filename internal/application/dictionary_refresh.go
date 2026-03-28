@@ -25,7 +25,7 @@ func (s *DictionaryService) RunDaemon(ctx context.Context) {
 
 func (s *DictionaryService) refreshAll(ctx context.Context) {
 	// Fetch all entries in one large page (no UI pagination needed here).
-	page, err := s.repo.ListDictionary(domain.DictionaryFilter{PageSize: 10_000})
+	page, err := s.repo.ListDictionary(ctx, domain.DictionaryFilter{PageSize: 10_000})
 	if err != nil {
 		s.log.Error("dictionary daemon: list", "err", err)
 		return
@@ -41,7 +41,7 @@ func (s *DictionaryService) refreshAll(ctx context.Context) {
 }
 
 func (s *DictionaryService) refresh(ctx context.Context, id string) error {
-	entry, found, err := s.repo.GetDictionary(id)
+	entry, found, err := s.repo.GetDictionary(ctx, id)
 	if err != nil || !found {
 		return err
 	}
@@ -104,7 +104,7 @@ func (s *DictionaryService) refresh(ctx context.Context, id string) error {
 	entry.SourceStats = newStats
 	entry.BestSource = newBest
 	entry.RefreshedAt = &now
-	if err := s.repo.UpsertDictionary(entry); err != nil {
+	if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
 		return err
 	}
 
@@ -118,7 +118,7 @@ func (s *DictionaryService) refresh(ctx context.Context, id string) error {
 // best available scraper source. It only runs when no manga entry exists yet
 // (i.e., before ingest), so it does not override ingested data.
 func (s *DictionaryService) syncMangaMetadata(ctx context.Context, entry domain.DictionaryEntry, ordered []domain.Scraper) {
-	if _, found, err := s.repo.GetMangaBySlug(entry.Slug); err != nil || found {
+	if _, found, err := s.repo.GetMangaBySlug(ctx, entry.Slug); err != nil || found {
 		return
 	}
 	for _, src := range ordered {
@@ -132,7 +132,7 @@ func (s *DictionaryService) syncMangaMetadata(ctx context.Context, entry domain.
 		}
 		manga.Slug = entry.Slug
 		manga.CoverURL = entry.CoverURL // use S3 URL from dictionary
-		if err := s.repo.UpsertManga(*manga); err != nil {
+		if err := s.repo.UpsertManga(ctx, *manga); err != nil {
 			s.log.Warn("dictionary refresh: sync manga metadata", "slug", entry.Slug, "err", err)
 		}
 		return

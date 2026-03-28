@@ -1,0 +1,16 @@
+version: "2"
+sql:
+  - engine: "mysql"
+    queries: "./internal/infrastructure/persistence/queries"
+    schema: "./internal/infrastructure/persistence/migrations"
+    gen:
+      go:
+        package: "queries"
+        out: "./internal/infrastructure/persistence/queries"
+        
+options:
+  emit_json_tags: true
+  json_tags_case_style: "snake"
+  emit_result_struct_pointers: true
+  emit_params_struct_pointers: true
+  emit_empty_slices: true

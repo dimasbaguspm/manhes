@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -9,24 +10,24 @@ import (
 	"manga-engine/internal/domain"
 )
 
-func (s *IngestService) writeMetadataLocked(slug string, manga *domain.Manga, availByLang map[string]int) {
+func (s *IngestService) writeMetadataLocked(ctx context.Context, slug string, manga *domain.Manga, availByLang map[string]int) {
 	s.metaMu.Lock()
 	defer s.metaMu.Unlock()
-	if err := s.writeMetadata(slug, manga, availByLang); err != nil {
+	if err := s.writeMetadata(ctx, slug, manga, availByLang); err != nil {
 		s.log.Warn("write metadata failed", "err", err)
 	}
 }
 
-func (s *IngestService) writeLangMetadataLocked(slug, lang string, available int) {
+func (s *IngestService) writeLangMetadataLocked(ctx context.Context, slug, lang string, available int) {
 	s.metaMu.Lock()
 	defer s.metaMu.Unlock()
-	if err := s.writeLangMetadata(slug, lang, available); err != nil {
+	if err := s.writeLangMetadata(ctx, slug, lang, available); err != nil {
 		s.log.Warn("write lang metadata failed", "lang", lang, "err", err)
 	}
 }
 
-func (s *IngestService) writeLangMetadata(slug, lang string, available int) error {
-	chapters, err := s.repo.GetDownloadedChaptersByLang(slug, lang)
+func (s *IngestService) writeLangMetadata(ctx context.Context, slug, lang string, available int) error {
+	chapters, err := s.repo.GetDownloadedChaptersByLang(ctx, slug, lang)
 	if err != nil {
 		return fmt.Errorf("get chapters: %w", err)
 	}
@@ -41,8 +42,8 @@ func (s *IngestService) writeLangMetadata(slug, lang string, available int) erro
 	return s.disk.WriteLangMetadata(slug, lang, m)
 }
 
-func (s *IngestService) writeMetadata(slug string, manga *domain.Manga, availByLang map[string]int) error {
-	downloaded, err := s.repo.GetDownloadedByLang(slug)
+func (s *IngestService) writeMetadata(ctx context.Context, slug string, manga *domain.Manga, availByLang map[string]int) error {
+	downloaded, err := s.repo.GetDownloadedByLang(ctx, slug)
 	if err != nil {
 		return fmt.Errorf("get downloaded stats: %w", err)
 	}

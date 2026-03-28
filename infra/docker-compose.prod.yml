@@ -1,4 +1,24 @@
 services:
+  mysql:
+    image: mysql:8.0
+    env_file:
+      - ../.env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASS:-manhes}
+      MYSQL_DATABASE: ${DB_NAME:-manhes}
+      MYSQL_USER: ${DB_USER:-manhes}
+      MYSQL_PASSWORD: ${DB_PASS:-manhes}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASS:-manhes}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -65,17 +85,19 @@ services:
       - ../.env
     environment:
       APP_ENV: prod
+      DB_HOST: mysql
     volumes:
       - library_data:/app/library
-      - db_data:/app
     depends_on:
+      mysql:
+        condition: service_healthy
       redpanda:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
 
 volumes:
+  mysql_data:
   minio_data:
   redpanda_data:
   library_data:
-  db_data:

@@ -64,31 +64,31 @@ func (s *SyncService) uploadChapter(ctx context.Context, ref domain.ChapterRef) 
 			return fmt.Errorf("upload page: %w", err)
 		}
 
-		if err := s.repo.UpsertPage(ref.Slug, ref.Language, ref.ChapterNum, pageIdx, url); err != nil {
+		if err := s.repo.UpsertPage(ctx, ref.Slug, ref.Language, ref.ChapterNum, pageIdx, url); err != nil {
 			return fmt.Errorf("upsert page: %w", err)
 		}
 
 		pageIdx++
 	}
 
-	if err := s.repo.MarkChapterUploaded(ref.Slug, ref.Language, ref.ChapterNum); err != nil {
+	if err := s.repo.MarkChapterUploaded(ctx, ref.Slug, ref.Language, ref.ChapterNum); err != nil {
 		return err
 	}
 	upLog.Info("chapter uploaded", slog.Int("pages", pageIdx), slog.Int64("duration_ms", time.Since(start).Milliseconds()))
 	// Transition to available only when all chapters for this slug are uploaded
 	// AND ingest is not still in progress (fetching state means some chapter
 	// downloads failed and will be retried by the watchlist daemon).
-	hasPending, err := s.repo.HasPendingChapters(ref.Slug)
+	hasPending, err := s.repo.HasPendingChapters(ctx, ref.Slug)
 	if err != nil {
 		s.log.Warn("sync: check pending chapters", "slug", ref.Slug, "err", err)
 	} else if !hasPending {
-		entry, found, err := s.repo.GetDictionaryBySlug(ref.Slug)
+		entry, found, err := s.repo.GetDictionaryBySlug(ctx, ref.Slug)
 		if err != nil || !found {
 			s.log.Warn("sync: get dictionary for state check", "slug", ref.Slug, "err", err)
 		} else if entry.State == domain.StateFetching {
 			s.log.Info("sync: skipping available transition, ingest still in progress", "slug", ref.Slug)
 		} else {
-			if err := s.repo.SetDictionaryStateBySlug(ref.Slug, domain.StateAvailable); err != nil {
+			if err := s.repo.SetDictionaryStateBySlug(ctx, ref.Slug, domain.StateAvailable); err != nil {
 				s.log.Warn("sync: set dictionary state available", "slug", ref.Slug, "err", err)
 			}
 		}

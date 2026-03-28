@@ -21,7 +21,6 @@ A self-hosted manga library. Manhes scrapes metadata and chapters from multiple 
 - **Web reader** — vertical strip layout, auto-scroll, zoom, header auto-hide, progress bar
 - **Watchlist** — add a manga once, background daemons keep it up to date
 - **Single binary** — React SPA embedded into the Go binary via `//go:embed`
-- **No CGO** — pure Go SQLite (`modernc.org/sqlite`), runs anywhere
 
 ---
 
@@ -29,7 +28,7 @@ A self-hosted manga library. Manhes scrapes metadata and chapters from multiple 
 
 | Layer | Technology |
 |---|---|
-| Backend | Go 1.25, Chi, `modernc.org/sqlite` |
+| Backend | Go 1.25, Chi, MySQL 8 |
 | Queue | Kafka / Redpanda |
 | Storage | MinIO (S3-compatible) |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
@@ -71,7 +70,7 @@ make dev-web        # second terminal — Vite dev server (localhost:5173)
 The Vite dev server proxies `/api` to `localhost:8080`.
 
 ```sh
-make dev-reset      # wipe Docker volumes, SQLite db, and library files
+make dev-reset      # wipe Docker volumes (including MySQL data) and library files
 ```
 
 ### Build from source
@@ -90,6 +89,13 @@ All config is via environment variables (`.env` file or injected at runtime). Co
 
 | Variable | Default | Description |
 |---|---|---|
+| `DB_HOST` | `localhost` | MySQL host |
+| `DB_PORT` | `3306` | MySQL port |
+| `DB_USER` | `manhes` | MySQL user |
+| `DB_PASS` | `manhes` | MySQL password |
+| `DB_NAME` | `manhes` | MySQL database name |
+| `DB_MAX_OPEN_CONNS` | `25` | Max open connections in the pool |
+| `DB_MAX_IDLE_CONNS` | `5` | Max idle connections in the pool |
 | `INGEST_WORKERS` | `5` | Max parallel ingest jobs |
 | `INGEST_INTERVAL` | `30m` | How often the watchlist daemon re-publishes ingest events |
 | `SYNC_INTERVAL` | `15m` | How often the sync daemon scans for missed chapters |
