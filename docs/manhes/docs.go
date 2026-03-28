@@ -108,7 +108,7 @@ const docTemplate = `{
         },
         "/manga": {
             "get": {
-                "description": "Returns a paginated list of manga from the dictionary (all states). Supports filtering by title, status, state, lastUpdate and sorting.",
+                "description": "Returns a paginated list of manga. Supports filtering by id, q, genre, author, state and sorting.",
                 "produces": [
                     "application/json"
                 ],
@@ -118,27 +118,61 @@ const docTemplate = `{
                 "summary": "List manga",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Filter by title (partial match)",
-                        "name": "title",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by dictionary_id (comma-separated or repeated)",
+                        "name": "id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter by status (ongoing|completed|hiatus)",
-                        "name": "status",
+                        "description": "Search by title or description",
+                        "name": "q",
                         "in": "query"
                     },
                     {
-                        "type": "string",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by genre (comma-separated or repeated)",
+                        "name": "genre",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by author (comma-separated or repeated)",
+                        "name": "author",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
                         "description": "Filter by state (unavailable|fetching|available)",
                         "name": "state",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Sort field: title (default) or last_update",
+                        "description": "Sort field: title | updatedAt | createdAt (default: title)",
                         "name": "sortBy",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: asc | desc (default: asc)",
+                        "name": "sortOrder",
                         "in": "query"
                     },
                     {
@@ -319,55 +353,6 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/watchlist": {
-            "post": {
-                "description": "Accepts a dictionary entry ID, saves the watchlist entry, sets dictionary state to fetching, and publishes an IngestRequested event. Returns 202 immediately.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "watchlist"
-                ],
-                "summary": "Register manga for ingestion",
-                "parameters": [
-                    {
-                        "description": "Watchlist entry",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.watchlistRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/httputil.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/httputil.ErrorResponse"
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
@@ -428,6 +413,17 @@ const docTemplate = `{
                 }
             }
         },
+        "domain.ChapterStats": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "domain.DictionaryResponse": {
             "type": "object",
             "properties": {
@@ -449,9 +445,6 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
-                "refreshed_at": {
-                    "type": "string"
-                },
                 "slug": {
                     "type": "string"
                 },
@@ -467,10 +460,10 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "state": {
+                "title": {
                     "type": "string"
                 },
-                "title": {
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -485,6 +478,9 @@ const docTemplate = `{
                     }
                 },
                 "cover_url": {
+                    "type": "string"
+                },
+                "created_at": {
                     "type": "string"
                 },
                 "description": {
@@ -505,12 +501,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/domain.MangaLangResponse"
                     }
                 },
-                "sources": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
                 "state": {
                     "type": "string"
                 },
@@ -528,7 +518,7 @@ const docTemplate = `{
         "domain.MangaLangResponse": {
             "type": "object",
             "properties": {
-                "fetched_chapters": {
+                "available_chapters": {
                     "type": "integer"
                 },
                 "lang": {
@@ -580,13 +570,19 @@ const docTemplate = `{
                 "chapters_by_lang": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "$ref": "#/definitions/domain.ChapterStats"
                     }
                 },
                 "cover_url": {
                     "type": "string"
                 },
+                "created_at": {
+                    "type": "string"
+                },
                 "description": {
+                    "type": "string"
+                },
+                "dictionary_id": {
                     "type": "string"
                 },
                 "genres": {
@@ -597,12 +593,6 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
-                },
-                "languages": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "state": {
                     "type": "string"
@@ -631,14 +621,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "fetched_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "handler.watchlistRequest": {
-            "type": "object",
-            "properties": {
-                "dictionaryId": {
                     "type": "string"
                 }
             }

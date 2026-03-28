@@ -12,14 +12,13 @@ import (
 
 func dictToResponse(e domain.DictionaryEntry) domain.DictionaryResponse {
 	r := domain.DictionaryResponse{
-		ID:          e.ID,
-		Slug:        e.Slug,
-		Title:       e.Title,
-		State:       string(e.State),
-		CoverURL:    e.CoverURL,
-		Sources:     e.Sources,
-		BestSource:  e.BestSource,
-		RefreshedAt: e.RefreshedAt,
+		ID:         e.ID,
+		Slug:       e.Slug,
+		Title:      e.Title,
+		CoverURL:   e.CoverURL,
+		Sources:    e.Sources,
+		BestSource: e.BestSource,
+		UpdatedAt:  e.UpdatedAt,
 	}
 	if len(e.SourceStats) > 0 {
 		r.SourceStats = e.SourceStats

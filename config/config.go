@@ -15,7 +15,7 @@ type Config struct {
 	LibraryPath string
 
 	IngestInterval            time.Duration
-	IngestWorkers             int
+	IngestConcurrency         int // max concurrent download/upload workers per job
 	SyncInterval              time.Duration
 	DictionaryRefreshInterval time.Duration
 
@@ -42,7 +42,7 @@ func Load() (*Config, error) {
 		LibraryPath: "./library",
 
 		IngestInterval:            envDuration("INGEST_INTERVAL", 30*time.Minute),
-		IngestWorkers:             envInt("INGEST_WORKERS", 5),
+		IngestConcurrency:         envInt("INGEST_CONCURRENCY", 4),
 		SyncInterval:              envDuration("SYNC_INTERVAL", 15*time.Minute),
 		DictionaryRefreshInterval: envDuration("DICTIONARY_REFRESH_INTERVAL", 4*time.Hour),
 

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,13 +17,12 @@ var _ domain.DictionaryManager = (*DictionaryService)(nil)
 
 // DictionaryServiceConfig holds dependencies and config for DictionaryService.
 type DictionaryServiceConfig struct {
-	Repo            domain.Repository
-	Registry        domain.SourceRegistry
-	DL              domain.Downloader
-	S3              domain.ObjectStore
-	Bus             domain.EventBus
-	Cfg             *config.Config
-	RefreshInterval time.Duration
+	Repo     domain.Repository
+	Registry domain.SourceRegistry
+	DL       domain.Downloader
+	S3       domain.ObjectStore
+	Bus      domain.EventBus
+	Cfg      *config.Config
 }
 
 type DictionaryService struct {
@@ -32,7 +32,6 @@ type DictionaryService struct {
 	s3c      domain.ObjectStore
 	bus      domain.EventBus
 	cfg      *config.Config
-	interval time.Duration
 	log      *slog.Logger
 }
 
@@ -44,51 +43,90 @@ func NewDictionaryService(cfg DictionaryServiceConfig) *DictionaryService {
 		s3c:      cfg.S3,
 		bus:      cfg.Bus,
 		cfg:      cfg.Cfg,
-		interval: cfg.RefreshInterval,
 		log:      slog.With("service", "dictionary"),
 	}
 }
 
+type searchHit struct {
+	slug        string
+	title       string
+	sources     map[string]string
+	sourceStats map[string]domain.SourceStat
+}
+
 func (s *DictionaryService) Search(ctx context.Context, query string) ([]domain.DictionaryEntry, error) {
-	type hit struct {
-		title   string
-		sources map[string]string
-	}
-	bySlug := make(map[string]*hit)
+	hits := make(map[string]*searchHit)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 
 	for _, src := range s.registry.Ordered() {
 		searcher, ok := src.(domain.Searcher)
 		if !ok {
 			continue
 		}
-		results, err := searcher.Search(ctx, query)
-		if err != nil {
-			s.log.Warn("dictionary search: source failed", "source", src.Source(), "query", query, "err", err)
-			continue
-		}
-		s.log.Info("dictionary search: source results", "source", src.Source(), "query", query, "count", len(results))
-		for _, r := range results {
-			slug := storage.Slugify(r.Title)
-			if h, ok := bySlug[slug]; ok {
-				h.sources[src.Source()] = r.ID
-			} else {
-				bySlug[slug] = &hit{
-					title:   r.Title,
-					sources: map[string]string{src.Source(): r.ID},
-				}
+		wg.Add(1)
+		go func(searcher domain.Searcher, scraperSrc domain.Scraper) {
+			defer wg.Done()
+			results, err := searcher.Search(ctx, query)
+			if err != nil {
+				s.log.Warn("search: source failed", "source", scraperSrc.Source(), "err", err)
+				return
 			}
+			s.log.Info("search: source results", "source", scraperSrc.Source(), "query", query, "count", len(results))
+			for _, r := range results {
+				slug := storage.Slugify(r.Title)
+				stat := s.fetchSourceStat(ctx, scraperSrc, r.ID)
+
+				mu.Lock()
+				if h, ok := hits[slug]; ok {
+					h.sources[scraperSrc.Source()] = r.ID
+					h.sourceStats[scraperSrc.Source()] = stat
+				} else {
+					hits[slug] = &searchHit{
+						slug:        slug,
+						title:       r.Title,
+						sources:     map[string]string{scraperSrc.Source(): r.ID},
+						sourceStats: map[string]domain.SourceStat{scraperSrc.Source(): stat},
+					}
+				}
+				mu.Unlock()
+			}
+		}(searcher, src)
+	}
+	wg.Wait()
+
+	// Build entries and batch upsert
+	entries := make([]domain.DictionaryEntry, 0, len(hits))
+	now := time.Now()
+	for _, h := range hits {
+		entries = append(entries, domain.DictionaryEntry{
+			ID:          uuid.New().String(),
+			Slug:        h.slug,
+			Title:       h.title,
+			Sources:     h.sources,
+			SourceStats: h.sourceStats,
+			BestSource:  map[string]string{},
+			CoverURL:    "",
+			UpdatedAt:   &now,
+			CreatedAt:   now,
+		})
+	}
+
+	if err := s.repo.UpsertDictionaryBatch(ctx, entries); err != nil {
+		return nil, err
+	}
+
+	// Publish dictionary.updated for each upserted entry so MangaService can sync metadata.
+	// TriggerIngest=false because Search does not trigger chapter ingestion.
+	for _, entry := range entries {
+		if err := s.bus.Publish(ctx, s.cfg.Bus.DictionaryUpdated, domain.DictionaryUpdated{
+			DictionaryID:  entry.ID,
+			TriggerIngest: false,
+		}); err != nil {
+			s.log.Warn("search: publish dictionary.updated", "id", entry.ID, "err", err)
 		}
 	}
 
-	var entries []domain.DictionaryEntry
-	for slug, h := range bySlug {
-		entry, err := s.Upsert(ctx, slug, h.title, h.sources)
-		if err != nil {
-			s.log.Warn("dictionary search: upsert failed", "slug", slug, "err", err)
-			continue
-		}
-		entries = append(entries, entry)
-	}
 	return entries, nil
 }
 
@@ -104,54 +142,59 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 		return domain.DictionaryEntry{}, domain.ErrNotFound
 	}
 
-	// Discover new sources from 3rd-party scrapers using the entry's title.
-	newSources := false
+	// Discover new sources concurrently from 3rd-party scrapers using the entry's title.
+	type discoveredSource struct {
+		sourceName string
+		sourceID   string
+	}
+	var discovered []discoveredSource
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	for _, src := range s.registry.Ordered() {
 		searcher, ok := src.(domain.Searcher)
 		if !ok {
 			continue
 		}
-		results, err := searcher.Search(ctx, entry.Title)
-		if err != nil {
-			s.log.Warn("dictionary refresh: search failed", "source", src.Source(), "title", entry.Title, "err", err)
-			continue
-		}
-		for _, r := range results {
-			if storage.Slugify(r.Title) == entry.Slug {
-				if _, exists := entry.Sources[src.Source()]; !exists {
-					if entry.Sources == nil {
-						entry.Sources = make(map[string]string)
-					}
-					entry.Sources[src.Source()] = r.ID
-					newSources = true
-				}
-				break
+		wg.Add(1)
+		go func(searcher domain.Searcher, scraperSrc domain.Scraper) {
+			defer wg.Done()
+			results, err := searcher.Search(ctx, entry.Title)
+			if err != nil {
+				s.log.Warn("dictionary refresh: search failed", "source", scraperSrc.Source(), "title", entry.Title, "err", err)
+				return
 			}
-		}
+			for _, r := range results {
+				if storage.Slugify(r.Title) == entry.Slug {
+					mu.Lock()
+					discovered = append(discovered, discoveredSource{
+						sourceName: scraperSrc.Source(),
+						sourceID:   r.ID,
+					})
+					mu.Unlock()
+				}
+			}
+		}(searcher, src)
 	}
+	wg.Wait()
 
-	if newSources {
-		if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
-			s.log.Warn("dictionary refresh: upsert new sources", "id", id, "err", err)
+	// Capture state BEFORE merge for change detection.
+	oldSources := entry.Sources
+
+	// Merge newly discovered sources.
+	for _, ds := range discovered {
+		if _, exists := entry.Sources[ds.sourceName]; !exists {
+			if entry.Sources == nil {
+				entry.Sources = make(map[string]string)
+			}
+			entry.Sources[ds.sourceName] = ds.sourceID
 		}
 	}
 
 	// Refresh source stats (chapter counts, cover, best-source selection).
-	// Only trigger ingest if total chapters or available languages changed.
-	changed, err := s.refresh(ctx, id)
-	if err != nil {
+	// Pass oldSources so entryChanged can compare pre- vs post-merge state.
+	if _, err := s.refreshWithOldState(ctx, id, oldSources); err != nil {
 		return domain.DictionaryEntry{}, err
-	}
-
-	// Stamp updated_at on the manga catalog entry so the detail page reflects
-	// that we've fetched from the source, regardless of whether new chapters
-	// were found.
-	// UpsertManga auto-stamps synced_at = CURRENT_TIMESTAMP, recording that
-	// we fetched from the source regardless of whether new chapters exist.
-	if manga, found, err := s.repo.GetMangaBySlug(ctx, entry.Slug); err == nil && found {
-		if err := s.repo.UpsertManga(ctx, manga.Manga); err != nil {
-			s.log.Warn("dictionary refresh: update manga updated_at", "slug", entry.Slug, "err", err)
-		}
 	}
 
 	updated, found, err := s.repo.GetDictionary(ctx, id)
@@ -162,44 +205,13 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 		return domain.DictionaryEntry{}, domain.ErrNotFound
 	}
 
-	// Only trigger ingest if chapter counts or languages changed.
-	if changed {
-		if err := s.bus.Publish(ctx, s.cfg.Bus.IngestRequested, domain.IngestRequested{
-			DictionaryID: updated.ID,
-			Slug:        updated.Slug,
-			Sources:     updated.Sources,
-			LangToSource: updated.BestSource,
-		}); err != nil {
-			s.log.Warn("dictionary refresh: publish ingest", "id", id, "err", err)
-		}
+	// Publish dictionary.updated so manga service can sync metadata and (if TriggerIngest=true) trigger ingestion.
+	if err := s.bus.Publish(ctx, s.cfg.Bus.DictionaryUpdated, domain.DictionaryUpdated{
+		DictionaryID:  updated.ID,
+		TriggerIngest: true, // Refresh always triggers ingestion so new chapters get synced
+	}); err != nil {
+		s.log.Warn("dictionary refresh: publish dictionary.updated", "id", id, "err", err)
 	}
 
 	return updated, nil
-}
-
-func (s *DictionaryService) Upsert(ctx context.Context, slug, title string, sources map[string]string) (domain.DictionaryEntry, error) {
-	entry := domain.DictionaryEntry{
-		ID:          uuid.New().String(),
-		Slug:        slug,
-		Title:       title,
-		Sources:     sources,
-		SourceStats: map[string]domain.SourceStat{},
-		BestSource:  map[string]string{},
-		State:       domain.StateUnavailable,
-		CreatedAt:   time.Now(),
-	}
-	if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
-		return domain.DictionaryEntry{}, err
-	}
-
-	// Read back to get canonical entry: actual ID, merged sources, preserved state/stats.
-	result, found, err := s.repo.GetDictionaryBySlug(ctx, slug)
-	if err != nil {
-		return domain.DictionaryEntry{}, err
-	}
-	if !found {
-		return domain.DictionaryEntry{}, nil
-	}
-	go s.refresh(context.Background(), result.ID)
-	return result, nil
 }

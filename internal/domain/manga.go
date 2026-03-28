@@ -5,47 +5,54 @@ import (
 	"time"
 )
 
+// ChapterStats holds per-language chapter counts.
+type ChapterStats struct {
+	Total     int `json:"total"`
+	Available int `json:"available"`
+}
+
 // Manga is the core aggregate representing a manga title.
+// It has a 1:1 relationship with DictionaryEntry via DictionaryID.
 type Manga struct {
-	Slug           string
-	Title          string
-	Description    string
-	Status         string            // ongoing | completed | hiatus
-	Authors        []string
-	Genres         []string
-	Languages      []string
-	CoverURL       string
-	Sources        map[string]string // source_name → source_id
-	ScrapedAt      time.Time
-	UpdatedAt      *time.Time
-	DictionaryID   string
-	State          MangaState
-	ChaptersByLang map[string]int // lang → available chapter count
+	ID             string                  `json:"id"`
+	DictionaryID   string                  `json:"dictionary_id"`
+	Title          string                  `json:"title"`
+	Description    string                  `json:"description"`
+	Status         string                  `json:"status"` // ongoing | completed | hiatus
+	Authors        []string                `json:"authors"`
+	Genres         []string                `json:"genres"`
+	CoverURL       string                  `json:"cover_url"`
+	State          MangaState              `json:"state"`
+	ChaptersByLang map[string]ChapterStats `json:"chapters_by_lang"`
+	UpdatedAt      *time.Time              `json:"updated_at"`
+	CreatedAt      time.Time               `json:"created_at"`
 }
 
 // MangaFilter holds optional filters and pagination for ListManga.
 type MangaFilter struct {
-	Title           string
-	Status          string
-	State           string // "unavailable" | "fetching" | "available" | "" (all)
-	SortBy          string // "title" (default) | "last_update"
-	Page            int    // 1-based
-	PageSize        int
-	HideUnavailable bool // exclude entries with state = "unavailable"
+	IDs       []string // filter by dictionary_id array
+	Q         string   // title OR description search
+	Genres    []string // genre array (OR between items)
+	Authors   []string // author array (OR between items)
+	States    []string // state array: unavailable, fetching, available
+	SortBy    string   // title | updatedAt | createdAt (default: title)
+	SortOrder string   // asc | desc (default: asc)
+	Page      int      // 1-based (default: 1)
+	PageSize  int      // (default: 20, max: 100)
 }
 
 // MangaPage is a paginated slice of Manga.
 type MangaPage struct {
-	Items    []Manga
-	Total    int
-	Page     int
-	PageSize int
+	Items    []Manga `json:"items"`
+	Total    int     `json:"total"`
+	Page     int     `json:"page"`
+	PageSize int     `json:"page_size"`
 }
 
 // ChapterRef is a lightweight reference to a chapter pending S3 upload.
 type ChapterRef struct {
-	DictionaryID string // used as S3 path prefix; falls back to Slug if empty
-	Slug         string
+	DictionaryID string // used as S3 path prefix
+	MangaID      string
 	Language     string
 	ChapterNum   string
 }
@@ -53,38 +60,38 @@ type ChapterRef struct {
 // MangaDetail includes full manga info with languages and chapters.
 type MangaDetail struct {
 	Manga
-	Languages []MangaLang
-	Chapters  []MangaChapter
+	Languages []MangaLang    `json:"languages"`
+	Chapters  []MangaChapter `json:"chapters"`
 }
 
 // MangaLang holds per-language availability stats.
 type MangaLang struct {
-	Language     string
-	Available    int // total chapters known from source
-	Fetched      int // chapters downloaded to disk
-	Uploaded     int // chapters uploaded to S3 (readable)
-	LatestUpdate *time.Time
+	Language     string     `json:"language"`
+	Total        int        `json:"total"`
+	Available    int        `json:"available"`
+	Fetched      int        `json:"fetched"`
+	LatestUpdate *time.Time `json:"latest_update"`
 }
 
 // MangaChapter holds chapter catalog metadata.
 type MangaChapter struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	PageCount  int
-	Uploaded   bool
-	UploadedAt *time.Time
+	MangaID    string     `json:"manga_id"`
+	Language   string     `json:"language"`
+	ChapterNum string     `json:"chapter_num"`
+	PageCount  int        `json:"page_count"`
+	Uploaded   bool       `json:"uploaded"`
+	UploadedAt *time.Time `json:"uploaded_at"`
 }
 
 // ChapterRead holds the result of reading a chapter: page URLs and prev/next navigation.
 type ChapterRead struct {
-	Pages       []string
-	PrevChapter *string
-	NextChapter *string
+	Pages       []string `json:"pages"`
+	PrevChapter *string  `json:"prev_chapter"`
+	NextChapter *string  `json:"next_chapter"`
 }
 
-// CatalogQuerier is the read-only manga catalog port used by the HTTP handler.
-type CatalogQuerier interface {
+// MangaQuerier is the read-only manga catalog port used by the HTTP handler.
+type MangaQuerier interface {
 	ListManga(ctx context.Context, filter MangaFilter) (MangaPage, error)
 	GetManga(ctx context.Context, dictionaryID string) (MangaDetail, bool, error)
 	GetChaptersByLang(ctx context.Context, dictionaryID, lang string) ([]MangaChapter, bool, error)
@@ -101,17 +108,18 @@ type Pagination struct {
 
 // MangaSummary is the list-view representation of a manga entry.
 type MangaSummary struct {
-	ID             string         `json:"id"`
-	Title          string         `json:"title"`
-	Description    string         `json:"description"`
-	Status         string         `json:"status"`
-	CoverURL       string         `json:"cover_url"`
-	State          string         `json:"state"`
-	Authors        []string       `json:"authors"`
-	Genres         []string       `json:"genres"`
-	Languages      []string       `json:"languages"`
-	ChaptersByLang map[string]int `json:"chapters_by_lang"`
-	UpdatedAt      *time.Time     `json:"updated_at"`
+	ID             string                  `json:"id"`
+	DictionaryID   string                  `json:"dictionary_id"`
+	Title          string                  `json:"title"`
+	Description    string                  `json:"description"`
+	Status         string                  `json:"status"`
+	CoverURL       string                  `json:"cover_url"`
+	State          string                  `json:"state"`
+	Authors        []string                `json:"authors"`
+	Genres         []string                `json:"genres"`
+	ChaptersByLang map[string]ChapterStats `json:"chapters_by_lang"`
+	UpdatedAt      *time.Time              `json:"updated_at"`
+	CreatedAt      time.Time               `json:"created_at"`
 }
 
 // MangaListResponse is the paginated manga list response.
@@ -122,11 +130,11 @@ type MangaListResponse struct {
 
 // MangaLangResponse holds per-language info in a manga detail response.
 type MangaLangResponse struct {
-	Lang             string     `json:"lang"`
-	LatestUpdate     *time.Time `json:"latest_update"`
-	TotalChapters    int        `json:"total_chapters"`
-	FetchedChapters  int        `json:"fetched_chapters"`
-	UploadedChapters int        `json:"uploaded_chapters"`
+	Lang              string     `json:"lang"`
+	TotalChapters     int        `json:"total_chapters"`
+	AvailableChapters int        `json:"available_chapters"`
+	UploadedChapters  int        `json:"uploaded_chapters"`
+	LatestUpdate      *time.Time `json:"latest_update"`
 }
 
 // MangaDetailResponse is the full detail response for a single manga.
@@ -139,9 +147,9 @@ type MangaDetailResponse struct {
 	Authors     []string            `json:"authors"`
 	Genres      []string            `json:"genres"`
 	CoverURL    string              `json:"cover_url"`
-	Sources     map[string]string   `json:"sources"`
 	Languages   []MangaLangResponse `json:"languages"`
 	UpdatedAt   *time.Time          `json:"updated_at"`
+	CreatedAt   time.Time           `json:"created_at"`
 }
 
 // ChapterItem is one chapter entry in a chapter list response.

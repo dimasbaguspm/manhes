@@ -39,6 +39,13 @@ definitions:
       prev_chapter:
         type: string
     type: object
+  domain.ChapterStats:
+    properties:
+      available:
+        type: integer
+      total:
+        type: integer
+    type: object
   domain.DictionaryResponse:
     properties:
       best_source:
@@ -53,8 +60,6 @@ definitions:
         type: string
       id:
         type: string
-      refreshed_at:
-        type: string
       slug:
         type: string
       source_stats:
@@ -65,9 +70,9 @@ definitions:
         additionalProperties:
           type: string
         type: object
-      state:
-        type: string
       title:
+        type: string
+      updated_at:
         type: string
     type: object
   domain.MangaDetailResponse:
@@ -77,6 +82,8 @@ definitions:
           type: string
         type: array
       cover_url:
+        type: string
+      created_at:
         type: string
       description:
         type: string
@@ -90,10 +97,6 @@ definitions:
         items:
           $ref: '#/definitions/domain.MangaLangResponse'
         type: array
-      sources:
-        additionalProperties:
-          type: string
-        type: object
       state:
         type: string
       status:
@@ -105,7 +108,7 @@ definitions:
     type: object
   domain.MangaLangResponse:
     properties:
-      fetched_chapters:
+      available_chapters:
         type: integer
       lang:
         type: string
@@ -139,11 +142,15 @@ definitions:
         type: array
       chapters_by_lang:
         additionalProperties:
-          type: integer
+          $ref: '#/definitions/domain.ChapterStats'
         type: object
       cover_url:
         type: string
+      created_at:
+        type: string
       description:
+        type: string
+      dictionary_id:
         type: string
       genres:
         items:
@@ -151,10 +158,6 @@ definitions:
         type: array
       id:
         type: string
-      languages:
-        items:
-          type: string
-        type: array
       state:
         type: string
       status:
@@ -173,11 +176,6 @@ definitions:
       err:
         type: string
       fetched_at:
-        type: string
-    type: object
-  handler.watchlistRequest:
-    properties:
-      dictionaryId:
         type: string
     type: object
   httputil.ErrorResponse:
@@ -256,24 +254,48 @@ paths:
       - dictionary
   /manga:
     get:
-      description: Returns a paginated list of manga from the dictionary (all states).
-        Supports filtering by title, status, state, lastUpdate and sorting.
+      description: Returns a paginated list of manga. Supports filtering by id, q,
+        genre, author, state and sorting.
       parameters:
-      - description: Filter by title (partial match)
+      - collectionFormat: csv
+        description: Filter by dictionary_id (comma-separated or repeated)
         in: query
-        name: title
+        items:
+          type: string
+        name: id
+        type: array
+      - description: Search by title or description
+        in: query
+        name: q
         type: string
-      - description: Filter by status (ongoing|completed|hiatus)
+      - collectionFormat: csv
+        description: Filter by genre (comma-separated or repeated)
         in: query
-        name: status
-        type: string
-      - description: Filter by state (unavailable|fetching|available)
+        items:
+          type: string
+        name: genre
+        type: array
+      - collectionFormat: csv
+        description: Filter by author (comma-separated or repeated)
         in: query
+        items:
+          type: string
+        name: author
+        type: array
+      - collectionFormat: csv
+        description: Filter by state (unavailable|fetching|available)
+        in: query
+        items:
+          type: string
         name: state
-        type: string
-      - description: 'Sort field: title (default) or last_update'
+        type: array
+      - description: 'Sort field: title | updatedAt | createdAt (default: title)'
         in: query
         name: sortBy
+        type: string
+      - description: 'Sort order: asc | desc (default: asc)'
+        in: query
+        name: sortOrder
         type: string
       - description: Page number (default 1)
         in: query
@@ -400,40 +422,6 @@ paths:
       summary: Get chapter pages
       tags:
       - manga
-  /watchlist:
-    post:
-      consumes:
-      - application/json
-      description: Accepts a dictionary entry ID, saves the watchlist entry, sets
-        dictionary state to fetching, and publishes an IngestRequested event. Returns
-        202 immediately.
-      parameters:
-      - description: Watchlist entry
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handler.watchlistRequest'
-      produces:
-      - application/json
-      responses:
-        "202":
-          description: Accepted
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/httputil.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/httputil.ErrorResponse'
-      summary: Register manga for ingestion
-      tags:
-      - watchlist
 produces:
 - application/json
 swagger: "2.0"

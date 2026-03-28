@@ -10,21 +10,18 @@ import (
 )
 
 type Handlers struct {
-	watchlist  domain.WatchlistManager
-	catalog    domain.CatalogQuerier
+	manga      domain.MangaQuerier
 	dictionary domain.DictionaryManager
 	log        *slog.Logger
 }
 
 func NewHandlers(
-	watchlist domain.WatchlistManager,
-	catalog domain.CatalogQuerier,
+	manga domain.MangaQuerier,
 	dictionary domain.DictionaryManager,
 	log *slog.Logger,
 ) *Handlers {
 	return &Handlers{
-		watchlist:  watchlist,
-		catalog:    catalog,
+		manga:      manga,
 		dictionary: dictionary,
 		log:        log,
 	}

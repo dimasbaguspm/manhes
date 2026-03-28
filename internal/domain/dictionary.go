@@ -48,8 +48,7 @@ type DictionaryEntry struct {
 	Sources     map[string]string     // source_name → source_id
 	SourceStats map[string]SourceStat // source_name → latest stats
 	BestSource  map[string]string     // lang → source_name with most chapters
-	State       MangaState
-	RefreshedAt *time.Time
+	UpdatedAt   *time.Time
 	CreatedAt   time.Time
 }
 
@@ -64,12 +63,10 @@ type DictionaryResponse struct {
 	ID             string                `json:"id"`
 	Slug           string                `json:"slug"`
 	Title          string                `json:"title"`
-	State          string                `json:"state"`
 	CoverURL       string                `json:"cover_url"`
 	Sources        map[string]string     `json:"sources"`
 	BestSource     map[string]string     `json:"best_source"`
 	SourceStats    map[string]SourceStat `json:"source_stats"`
 	ChaptersByLang map[string]int        `json:"chapters_by_lang"`
-	RefreshedAt    *time.Time            `json:"refreshed_at"`
+	UpdatedAt      *time.Time            `json:"updated_at"`
 }
-

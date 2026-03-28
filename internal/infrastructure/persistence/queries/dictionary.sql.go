@@ -7,19 +7,30 @@ package queries
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"time"
 )
 
 const getDictionary = `-- name: GetDictionary :one
-SELECT id, slug, title, sources, source_stats, best_source, state, cover_url, refreshed_at, created_at
+SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
 FROM dictionary WHERE id = ?
 `
 
-func (q *Queries) GetDictionary(ctx context.Context, id string) (Dictionary, error) {
+type GetDictionaryRow struct {
+	ID          string
+	Slug        string
+	Title       string
+	Sources     json.RawMessage
+	SourceStats json.RawMessage
+	BestSource  json.RawMessage
+	CoverUrl    string
+	UpdatedAt   time.Time
+	CreatedAt   time.Time
+}
+
+func (q *Queries) GetDictionary(ctx context.Context, id string) (GetDictionaryRow, error) {
 	row := q.db.QueryRowContext(ctx, getDictionary, id)
-	var i Dictionary
+	var i GetDictionaryRow
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
@@ -27,22 +38,33 @@ func (q *Queries) GetDictionary(ctx context.Context, id string) (Dictionary, err
 		&i.Sources,
 		&i.SourceStats,
 		&i.BestSource,
-		&i.State,
 		&i.CoverUrl,
-		&i.RefreshedAt,
+		&i.UpdatedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getDictionaryBySlug = `-- name: GetDictionaryBySlug :one
-SELECT id, slug, title, sources, source_stats, best_source, state, cover_url, refreshed_at, created_at
+SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
 FROM dictionary WHERE slug = ?
 `
 
-func (q *Queries) GetDictionaryBySlug(ctx context.Context, slug string) (Dictionary, error) {
+type GetDictionaryBySlugRow struct {
+	ID          string
+	Slug        string
+	Title       string
+	Sources     json.RawMessage
+	SourceStats json.RawMessage
+	BestSource  json.RawMessage
+	CoverUrl    string
+	UpdatedAt   time.Time
+	CreatedAt   time.Time
+}
+
+func (q *Queries) GetDictionaryBySlug(ctx context.Context, slug string) (GetDictionaryBySlugRow, error) {
 	row := q.db.QueryRowContext(ctx, getDictionaryBySlug, slug)
-	var i Dictionary
+	var i GetDictionaryBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
@@ -50,9 +72,8 @@ func (q *Queries) GetDictionaryBySlug(ctx context.Context, slug string) (Diction
 		&i.Sources,
 		&i.SourceStats,
 		&i.BestSource,
-		&i.State,
 		&i.CoverUrl,
-		&i.RefreshedAt,
+		&i.UpdatedAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -60,12 +81,12 @@ func (q *Queries) GetDictionaryBySlug(ctx context.Context, slug string) (Diction
 
 const listDictionary = `-- name: ListDictionary :many
 WITH filtered AS (
-    SELECT id, slug, title, sources, source_stats, best_source, state, cover_url, refreshed_at, created_at
+    SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
     FROM dictionary
     WHERE (? = '' OR title LIKE CONCAT('%', ?, '%'))
 ),
 counted AS (SELECT COUNT(*) AS total FROM filtered)
-SELECT f.id, f.slug, f.title, f.sources, f.source_stats, f.best_source, f.state, f.cover_url, f.refreshed_at, f.created_at, c.total
+SELECT f.id, f.slug, f.title, f.sources, f.source_stats, f.best_source, f.cover_url, f.updated_at, f.created_at, c.total
 FROM filtered f, counted c
 ORDER BY f.title
 LIMIT ? OFFSET ?
@@ -85,9 +106,8 @@ type ListDictionaryRow struct {
 	Sources     json.RawMessage
 	SourceStats json.RawMessage
 	BestSource  json.RawMessage
-	State       string
 	CoverUrl    string
-	RefreshedAt sql.NullTime
+	UpdatedAt   time.Time
 	CreatedAt   time.Time
 	Total       int64
 }
@@ -113,9 +133,8 @@ func (q *Queries) ListDictionary(ctx context.Context, arg ListDictionaryParams) 
 			&i.Sources,
 			&i.SourceStats,
 			&i.BestSource,
-			&i.State,
 			&i.CoverUrl,
-			&i.RefreshedAt,
+			&i.UpdatedAt,
 			&i.CreatedAt,
 			&i.Total,
 		); err != nil {
@@ -132,46 +151,17 @@ func (q *Queries) ListDictionary(ctx context.Context, arg ListDictionaryParams) 
 	return items, nil
 }
 
-const setDictionaryState = `-- name: SetDictionaryState :exec
-UPDATE dictionary SET state = ? WHERE id = ?
-`
-
-type SetDictionaryStateParams struct {
-	State string
-	ID    string
-}
-
-func (q *Queries) SetDictionaryState(ctx context.Context, arg SetDictionaryStateParams) error {
-	_, err := q.db.ExecContext(ctx, setDictionaryState, arg.State, arg.ID)
-	return err
-}
-
-const setDictionaryStateBySlug = `-- name: SetDictionaryStateBySlug :exec
-UPDATE dictionary SET state = ? WHERE slug = ?
-`
-
-type SetDictionaryStateBySlugParams struct {
-	State string
-	Slug  string
-}
-
-func (q *Queries) SetDictionaryStateBySlug(ctx context.Context, arg SetDictionaryStateBySlugParams) error {
-	_, err := q.db.ExecContext(ctx, setDictionaryStateBySlug, arg.State, arg.Slug)
-	return err
-}
-
 const upsertDictionary = `-- name: UpsertDictionary :exec
 
-INSERT INTO dictionary (id, slug, title, sources, source_stats, best_source, state, cover_url, refreshed_at, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO dictionary (id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
 ON DUPLICATE KEY UPDATE
     title=VALUES(title),
     sources=JSON_MERGE_PATCH(dictionary.sources, VALUES(sources)),
     source_stats=CASE WHEN VALUES(source_stats) != '{}' THEN VALUES(source_stats) ELSE dictionary.source_stats END,
     best_source=CASE WHEN VALUES(best_source) != '{}' THEN VALUES(best_source) ELSE dictionary.best_source END,
-    state=CASE WHEN dictionary.state = 'available' THEN 'available' ELSE VALUES(state) END,
     cover_url=CASE WHEN VALUES(cover_url) != '' THEN VALUES(cover_url) ELSE dictionary.cover_url END,
-    refreshed_at=CASE WHEN VALUES(refreshed_at) IS NOT NULL THEN VALUES(refreshed_at) ELSE dictionary.refreshed_at END
+    updated_at=CURRENT_TIMESTAMP
 `
 
 type UpsertDictionaryParams struct {
@@ -181,9 +171,7 @@ type UpsertDictionaryParams struct {
 	Sources     json.RawMessage
 	SourceStats json.RawMessage
 	BestSource  json.RawMessage
-	State       string
 	CoverUrl    string
-	RefreshedAt sql.NullTime
 	CreatedAt   time.Time
 }
 
@@ -196,9 +184,7 @@ func (q *Queries) UpsertDictionary(ctx context.Context, arg UpsertDictionaryPara
 		arg.Sources,
 		arg.SourceStats,
 		arg.BestSource,
-		arg.State,
 		arg.CoverUrl,
-		arg.RefreshedAt,
 		arg.CreatedAt,
 	)
 	return err

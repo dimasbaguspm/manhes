@@ -1,0 +1,4 @@
+ALTER TABLE dictionary
+    DROP COLUMN state,
+    DROP INDEX idx_dictionary_state,
+    CHANGE COLUMN refreshed_at updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;

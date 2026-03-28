@@ -28,8 +28,6 @@ func NewRouter(h *Handlers, cfg *config.Config) http.Handler {
 
 		r.Get("/dictionary", h.SearchDictionary)
 		r.Post("/dictionary/{dictionaryId}", h.RefreshDictionary)
-
-		r.Post("/watchlist", h.AddWatchlist)
 	})
 
 	// SPA is only served in prod — in dev the Vite server handles the frontend.

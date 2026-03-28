@@ -61,8 +61,6 @@ func (a *Adapter) FetchMangaDetail(ctx context.Context, id string) (*domain.Mang
 		Authors:     authors,
 		Genres:      genres,
 		CoverURL:    coverURL,
-		Sources:     map[string]string{"mangadex": id},
-		ScrapedAt:   time.Now(),
 	}, nil
 }
 

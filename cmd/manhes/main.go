@@ -72,53 +72,57 @@ func run(cfg *config.Config, log *slog.Logger) error {
 	reg := buildScraperRegistry(cfg)
 	dl := downloader.New(&http.Client{Timeout: cfg.DownloaderTimeout})
 
-	ingestSvc := application.NewIngestService(application.IngestServiceConfig{
+	dictSvc := application.NewDictionaryService(application.DictionaryServiceConfig{
 		Repo:     repo,
 		Registry: reg,
 		DL:       dl,
-		Disk:     disk,
 		S3:       s3c,
 		Bus:      bus,
 		Cfg:      cfg,
 	})
-	syncSvc := application.NewSyncService(repo, disk, s3c, application.SyncConfig{
-		LibraryPath: cfg.LibraryPath,
-		Interval:    cfg.SyncInterval,
-	})
-	dictSvc := application.NewDictionaryService(application.DictionaryServiceConfig{
-		Repo:            repo,
-		Registry:        reg,
-		DL:              dl,
-		S3:              s3c,
-		Bus:             bus,
-		Cfg:             cfg,
-		RefreshInterval: cfg.DictionaryRefreshInterval,
-	})
-	watchlistSvc := application.NewWatchlistService(application.WatchlistServiceConfig{
+	retrievalHandler := application.NewRetrievalHandler(application.RetrievalHandlerConfig{
 		Repo:     repo,
-		Dict:     dictSvc,
 		Registry: reg,
 		Bus:      bus,
 		Cfg:      cfg,
 	})
-	catalogSvc := application.NewCatalogService(repo)
+	mangaSvc := application.NewMangaService(application.MangaServiceConfig{
+		Repo:     repo,
+		Registry: reg,
+		Bus:      bus,
+		Cfg:      cfg,
+	})
+	fileUploadSvc := application.NewFileUploadService(application.FileUploadServiceConfig{
+		Repo: repo,
+		Disk: disk,
+		S3:   s3c,
+		DL:   dl,
+		Bus:  bus,
+		Cfg:  cfg,
+	})
+	ingestDaemon := application.NewIngestDaemon(application.IngestDaemonConfig{
+		Repo:     repo,
+		DictSvc:  dictSvc,
+		DiskPath: cfg.LibraryPath,
+		Cfg:      cfg,
+	})
 
 	// Subscribe event handlers
-	bus.Subscribe(cfg.Bus.IngestRequested, func(ctx context.Context, e domain.Event) error {
-		return ingestSvc.Ingest(ctx, e.(domain.IngestRequested))
+	bus.Subscribe(cfg.Bus.DictionaryUpdated, func(ctx context.Context, e domain.Event) error {
+		return mangaSvc.HandleDictionaryUpdated(ctx, e.(domain.DictionaryUpdated))
 	})
-	bus.Subscribe(cfg.Bus.ChapterUploaded, func(ctx context.Context, e domain.Event) error {
-		return syncSvc.HandleChapterUploaded(ctx, e.(domain.ChapterUploaded))
+	bus.Subscribe(cfg.Bus.IngestRequested, func(ctx context.Context, e domain.Event) error {
+		return retrievalHandler.HandleIngestRequested(ctx, e.(domain.IngestRequested))
+	})
+	bus.Subscribe(cfg.Bus.ChaptersFound, func(ctx context.Context, e domain.Event) error {
+		return fileUploadSvc.HandleChaptersFound(ctx, e.(domain.ChaptersFound))
 	})
 
-	go syncSvc.SyncAll(ctx)
-	go watchlistSvc.RunDaemon(ctx)
-	go dictSvc.RunDaemon(ctx)
-	log.Info("[Watchlist] daemon started")
-	log.Info("[Dictionary] daemon started", "interval", cfg.DictionaryRefreshInterval)
+	go ingestDaemon.Run(ctx)
+	log.Info("[Ingest] daemon started", "interval", cfg.DictionaryRefreshInterval)
 
 	log.Info("[Core] server up", "addr", cfg.ListenAddr)
-	h := handler.NewHandlers(watchlistSvc, catalogSvc, dictSvc, log)
+	h := handler.NewHandlers(mangaSvc, dictSvc, log)
 	return handler.NewServer(cfg.ListenAddr, handler.NewRouter(h, cfg), log).Run(ctx)
 }
 

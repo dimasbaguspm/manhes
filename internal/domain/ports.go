@@ -2,7 +2,6 @@ package domain
 
 import (
 	"context"
-	"time"
 
 	"manga-engine/pkg/eventbus"
 )
@@ -18,13 +17,15 @@ type EventBus = eventbus.Bus
 
 // Repository is the single port for all DB operations.
 type Repository interface {
-	// Catalog
+	// Manga
 	UpsertManga(ctx context.Context, m Manga) error
 	ListManga(ctx context.Context, filter MangaFilter) (MangaPage, error)
-	GetMangaBySlug(ctx context.Context, slug string) (MangaDetail, bool, error)
+	GetMangaByDictionaryID(ctx context.Context, dictionaryID string) (MangaDetail, bool, error)
+	GetMangaByID(ctx context.Context, id string) (MangaDetail, bool, error)
 
-	// Chapters (replaces manga_chapters, manga_langs, chapter_pages, ingest_chapters)
+	// Chapters
 	UpsertChapter(ctx context.Context, id, mangaID, name string, chapterOrder int, lang, imageSrc string) error
+	UpsertChapterBatch(ctx context.Context, chapters []Chapter) error
 	GetChapterCountByLang(ctx context.Context, mangaID, lang string) (int, error)
 	GetChaptersByLang(ctx context.Context, mangaID, lang string) ([]Chapter, error)
 	GetChaptersByManga(ctx context.Context, mangaID string) ([]Chapter, error)
@@ -32,24 +33,17 @@ type Repository interface {
 
 	// Dictionary
 	UpsertDictionary(ctx context.Context, entry DictionaryEntry) error
+	UpsertDictionaryBatch(ctx context.Context, entries []DictionaryEntry) error
 	GetDictionary(ctx context.Context, id string) (DictionaryEntry, bool, error)
 	GetDictionaryBySlug(ctx context.Context, slug string) (DictionaryEntry, bool, error)
 	ListDictionary(ctx context.Context, filter DictionaryFilter) (DictionaryPage, error)
-	SetDictionaryState(ctx context.Context, id string, state MangaState) error
-	SetDictionaryStateBySlug(ctx context.Context, slug string, state MangaState) error
-
-	// Watchlist
-	ListWatchlist(ctx context.Context) ([]WatchlistEntry, error)
-	AddWatchlist(ctx context.Context, entry WatchlistEntry) error
-	RemoveWatchlist(ctx context.Context, slug string) error
-	UpdateLastChecked(ctx context.Context, slug string, t time.Time) error
 
 	// Ingest
-	GetDownloadedByLang(ctx context.Context, slug string) (map[string]int, error)
-	GetDownloadedChaptersByLang(ctx context.Context, slug, lang string) ([]string, error)
+	GetDownloadedByLang(ctx context.Context, mangaID string) (map[string]int, error)
+	GetDownloadedChaptersByLang(ctx context.Context, mangaID, lang string) ([]string, error)
 
-	// Manga
-	UpdateMangaCover(ctx context.Context, slug, coverURL string) error
+	// Manga (cover)
+	UpdateMangaCover(ctx context.Context, mangaID, coverURL string) error
 
 	Close() error
 }
@@ -74,4 +68,9 @@ type Storer interface {
 	WriteLangMetadata(slug, lang string, m *LangMetadata) error
 	ReadLangMetadata(slug, lang string) (*LangMetadata, error)
 	WriteChapterManifest(slug, lang string, ch *Chapter) error
+}
+
+// MangaManager is the manga management port, subscribed to dictionary.updated events.
+type MangaManager interface {
+	HandleDictionaryUpdated(ctx context.Context, e DictionaryUpdated) error
 }

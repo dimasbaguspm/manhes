@@ -67,20 +67,27 @@ type MySQLRepository struct {
 	q  *queries.Queries
 }
 
-// Catalog methods
+// Manga methods
 
 func (r *MySQLRepository) UpsertManga(ctx context.Context, m domain.Manga) error {
 	authors, _ := json.Marshal(m.Authors)
 	genres, _ := json.Marshal(m.Genres)
+	chaptersByLang, _ := json.Marshal(m.ChaptersByLang)
+	state := string(m.State)
+	if state == "" {
+		state = string(domain.StateUnavailable)
+	}
 	return r.q.UpsertManga(ctx, queries.UpsertMangaParams{
-		Uuid:        m.DictionaryID,
-		Slug:        m.Slug,
-		Title:       m.Title,
-		Description: m.Description,
-		Status:      m.Status,
-		Authors:     authors,
-		Genres:      genres,
-		CoverUrl:    m.CoverURL,
+		ID:             m.ID,
+		DictionaryID:   m.DictionaryID,
+		Title:          m.Title,
+		Description:    m.Description,
+		Status:         m.Status,
+		Authors:        authors,
+		Genres:         genres,
+		CoverUrl:       m.CoverURL,
+		State:          state,
+		ChaptersByLang: chaptersByLang,
 	})
 }
 
@@ -88,6 +95,9 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 	pageSize := filter.PageSize
 	if pageSize <= 0 {
 		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
 	}
 	page := filter.Page
 	if page <= 0 {
@@ -99,19 +109,42 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 	if sortBy == "" {
 		sortBy = "title"
 	}
+	sortOrder := filter.SortOrder
+	if sortOrder == "" {
+		sortOrder = "asc"
+	}
+
+	stateVal := ""
+	if len(filter.States) == 1 {
+		stateVal = filter.States[0]
+	}
+	dictIDVal := ""
+	if len(filter.IDs) == 1 {
+		dictIDVal = filter.IDs[0]
+	}
 
 	rows, err := r.q.ListManga(ctx, queries.ListMangaParams{
-		Column1: filter.Title,
-		CONCAT:  filter.Title,
-		Column3: filter.State,
-		State:   filter.State,
-		Column5: filter.Status,
-		Status:  filter.Status,
-		Column7: filter.HideUnavailable,
-		Column8: sortBy,
-		Column9: sortBy,
-		Limit:   int32(pageSize),
-		Offset:  int32(offset),
+		Column1:      nil,
+		DictionaryID: dictIDVal,
+		Column3:      filter.Q,
+		CONCAT:       filter.Q,
+		CONCAT_2:     filter.Q,
+		Column6:      nil,
+		State:        stateVal,
+		Column8:      sortBy,
+		Column9:      sortOrder,
+		Column10:     sortBy,
+		Column11:     sortOrder,
+		Column12:     sortBy,
+		Column13:     sortOrder,
+		Column14:     sortBy,
+		Column15:     sortOrder,
+		Column16:     sortBy,
+		Column17:     sortOrder,
+		Column18:     sortBy,
+		Column19:     sortOrder,
+		Limit:        int32(pageSize),
+		Offset:       int32(offset),
 	})
 	if err != nil {
 		return domain.MangaPage{}, err
@@ -122,45 +155,122 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 
 	items := make([]domain.Manga, 0, len(rows))
 	for _, row := range rows {
-		var authors, genres, langs []string
+		var authors, genres []string
 		json.Unmarshal(row.Authors, &authors)
 		json.Unmarshal(row.Genres, &genres)
-		json.Unmarshal(row.Languages, &langs)
+		var chaptersByLang map[string]domain.ChapterStats
+		json.Unmarshal(row.ChaptersByLang, &chaptersByLang)
+		if chaptersByLang == nil {
+			chaptersByLang = map[string]domain.ChapterStats{}
+		}
+
 		var updatedAt *time.Time
-		t := row.SyncedAt
-		updatedAt = &t
-		var dictID string
-		if row.DictID != "" {
-			dictID = row.DictID
+		if row.UpdatedAt.Valid {
+			t := row.UpdatedAt.Time
+			updatedAt = &t
 		}
-		var state string
-		if row.State != "" {
-			state = row.State
+		var createdAt time.Time
+		if row.CreatedAt.Valid {
+			createdAt = row.CreatedAt.Time
 		}
-		var coverURL string
-		if row.CoverUrl != nil {
-			coverURL, _ = row.CoverUrl.(string)
-		}
+
 		items = append(items, domain.Manga{
-			DictionaryID: dictID,
-			Slug:         row.Slug,
-			Title:        row.Title,
-			Description:  row.Description,
-			Status:       row.Status,
-			CoverURL:     coverURL,
-			Authors:      authors,
-			Genres:       genres,
-			Languages:    langs,
-			UpdatedAt:    updatedAt,
-			State:        domain.MangaState(state),
+			ID:             row.ID,
+			DictionaryID:   row.DictionaryID,
+			Title:          row.Title,
+			Description:    row.Description,
+			Status:         row.Status,
+			CoverURL:       row.CoverUrl,
+			Authors:        authors,
+			Genres:         genres,
+			State:          domain.MangaState(row.State),
+			ChaptersByLang: chaptersByLang,
+			UpdatedAt:      updatedAt,
+			CreatedAt:      createdAt,
 		})
 	}
 
-	return domain.MangaPage{Items: items, Total: int(rows[0].Total), Page: page, PageSize: pageSize}, nil
+	// Apply array filters in-memory
+	if len(filter.Genres) > 0 || len(filter.Authors) > 0 || len(filter.States) > 1 {
+		items = applyMangaFilters(items, filter)
+	}
+	if len(filter.IDs) > 1 {
+		idSet := map[string]bool{}
+		for _, id := range filter.IDs {
+			idSet[id] = true
+		}
+		filtered := make([]domain.Manga, 0, len(items))
+		for _, m := range items {
+			if idSet[m.DictionaryID] {
+				filtered = append(filtered, m)
+			}
+		}
+		items = filtered
+	}
+
+	var total int
+	if rows[0].Total != nil {
+		switch v := rows[0].Total.(type) {
+		case int64:
+			total = int(v)
+		case int:
+			total = v
+		}
+	}
+
+	return domain.MangaPage{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
-func (r *MySQLRepository) GetMangaBySlug(ctx context.Context, slug string) (domain.MangaDetail, bool, error) {
-	row, err := r.q.GetMangaBySlug(ctx, slug)
+func applyMangaFilters(items []domain.Manga, filter domain.MangaFilter) []domain.Manga {
+	genreSet := map[string]bool{}
+	for _, g := range filter.Genres {
+		genreSet[g] = true
+	}
+	authorSet := map[string]bool{}
+	for _, a := range filter.Authors {
+		authorSet[a] = true
+	}
+	stateSet := map[string]bool{}
+	for _, s := range filter.States {
+		stateSet[s] = true
+	}
+
+	result := make([]domain.Manga, 0, len(items))
+	for _, m := range items {
+		if len(genreSet) > 0 {
+			match := false
+			for _, g := range m.Genres {
+				if genreSet[g] {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		if len(authorSet) > 0 {
+			match := false
+			for _, a := range m.Authors {
+				if authorSet[a] {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		if len(stateSet) > 0 && !stateSet[string(m.State)] {
+			continue
+		}
+		result = append(result, m)
+	}
+	return result
+}
+
+func (r *MySQLRepository) GetMangaByDictionaryID(ctx context.Context, dictionaryID string) (domain.MangaDetail, bool, error) {
+	row, err := r.q.GetMangaByDictionaryID(ctx, dictionaryID)
 	if err == sql.ErrNoRows {
 		return domain.MangaDetail{}, false, nil
 	}
@@ -171,33 +281,90 @@ func (r *MySQLRepository) GetMangaBySlug(ctx context.Context, slug string) (doma
 	var authors, genres []string
 	json.Unmarshal(row.Authors, &authors)
 	json.Unmarshal(row.Genres, &genres)
-
-	var dictID, state string
-	if row.DictID.Valid {
-		dictID = row.DictID.String
+	var chaptersByLang map[string]domain.ChapterStats
+	json.Unmarshal(row.ChaptersByLang, &chaptersByLang)
+	if chaptersByLang == nil {
+		chaptersByLang = map[string]domain.ChapterStats{}
 	}
-	if row.State.Valid {
-		state = row.State.String
+
+	var updatedAt *time.Time
+	if row.UpdatedAt.Valid {
+		t := row.UpdatedAt.Time
+		updatedAt = &t
+	}
+	var createdAt time.Time
+	if row.CreatedAt.Valid {
+		createdAt = row.CreatedAt.Time
 	}
 
 	d := domain.MangaDetail{
 		Manga: domain.Manga{
-			DictionaryID: dictID,
-			Slug:         row.Slug,
-			Title:        row.Title,
-			Description:  row.Description,
-			Status:       row.Status,
-			CoverURL:     row.CoverUrl,
-			Authors:      authors,
-			Genres:       genres,
-			State:        domain.MangaState(state),
+			ID:             row.ID,
+			DictionaryID:   row.DictionaryID,
+			Title:          row.Title,
+			Description:    row.Description,
+			Status:         row.Status,
+			CoverURL:       row.CoverUrl,
+			Authors:        authors,
+			Genres:         genres,
+			State:          domain.MangaState(row.State),
+			ChaptersByLang: chaptersByLang,
+			UpdatedAt:      updatedAt,
+			CreatedAt:      createdAt,
+		},
+	}
+	return r.fillMangaDetail(ctx, d)
+}
+
+func (r *MySQLRepository) GetMangaByID(ctx context.Context, id string) (domain.MangaDetail, bool, error) {
+	row, err := r.q.GetMangaByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return domain.MangaDetail{}, false, nil
+	}
+	if err != nil {
+		return domain.MangaDetail{}, false, err
+	}
+
+	var authors, genres []string
+	json.Unmarshal(row.Authors, &authors)
+	json.Unmarshal(row.Genres, &genres)
+	var chaptersByLang map[string]domain.ChapterStats
+	json.Unmarshal(row.ChaptersByLang, &chaptersByLang)
+	if chaptersByLang == nil {
+		chaptersByLang = map[string]domain.ChapterStats{}
+	}
+
+	var updatedAt *time.Time
+	if row.UpdatedAt.Valid {
+		t := row.UpdatedAt.Time
+		updatedAt = &t
+	}
+	var createdAt time.Time
+	if row.CreatedAt.Valid {
+		createdAt = row.CreatedAt.Time
+	}
+
+	d := domain.MangaDetail{
+		Manga: domain.Manga{
+			ID:             row.ID,
+			DictionaryID:   row.DictionaryID,
+			Title:          row.Title,
+			Description:    row.Description,
+			Status:         row.Status,
+			CoverURL:       row.CoverUrl,
+			Authors:        authors,
+			Genres:         genres,
+			State:          domain.MangaState(row.State),
+			ChaptersByLang: chaptersByLang,
+			UpdatedAt:      updatedAt,
+			CreatedAt:      createdAt,
 		},
 	}
 	return r.fillMangaDetail(ctx, d)
 }
 
 func (r *MySQLRepository) fillMangaDetail(ctx context.Context, d domain.MangaDetail) (domain.MangaDetail, bool, error) {
-	chRows, err := r.q.GetChaptersByManga(ctx, d.Slug)
+	chRows, err := r.q.GetChaptersByManga(ctx, d.ID)
 	if err != nil {
 		return domain.MangaDetail{}, false, err
 	}
@@ -219,7 +386,7 @@ func (r *MySQLRepository) fillMangaDetail(ctx context.Context, d domain.MangaDet
 		}
 
 		mc := domain.MangaChapter{
-			Slug:       ch.MangaID,
+			MangaID:    ch.MangaID,
 			Language:   lang,
 			ChapterNum: ch.Name,
 			PageCount:  pageCount,
@@ -251,6 +418,39 @@ func (r *MySQLRepository) UpsertChapter(ctx context.Context, id, mangaID, name s
 	})
 }
 
+// UpsertChapterBatch inserts or updates multiple chapters in a single transaction.
+// It auto-generates IDs for chapters that don't have one.
+func (r *MySQLRepository) UpsertChapterBatch(ctx context.Context, chapters []domain.Chapter) error {
+	if len(chapters) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx,
+		`INSERT INTO chapters (id, manga_id, name, chapter_order, lang, image_src) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), chapter_order=VALUES(chapter_order), lang=VALUES(lang), image_src=VALUES(image_src)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, ch := range chapters {
+		id := ch.ID
+		if id == "" {
+			id = uuid.New().String()
+		}
+		_, err := stmt.ExecContext(ctx, id, ch.MangaID, ch.Number, int(ch.SortKey), ch.Language, ch.Source)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (r *MySQLRepository) GetChapterCountByLang(ctx context.Context, mangaID, lang string) (int, error) {
 	n, err := r.q.GetChapterCountByLang(ctx, queries.GetChapterCountByLangParams{
 		MangaID: mangaID,
@@ -270,10 +470,10 @@ func (r *MySQLRepository) GetChaptersByLang(ctx context.Context, mangaID, lang s
 	chapters := make([]domain.Chapter, 0, len(rows))
 	for _, ch := range rows {
 		chapters = append(chapters, domain.Chapter{
-			MangaSlug: ch.MangaID,
-			Number:    ch.Name,
-			SortKey:   float64(ch.ChapterOrder),
-			Language:  ch.Lang,
+			MangaID:  ch.MangaID,
+			Number:   ch.Name,
+			SortKey:  float64(ch.ChapterOrder),
+			Language: ch.Lang,
 		})
 	}
 	return chapters, nil
@@ -287,10 +487,10 @@ func (r *MySQLRepository) GetChaptersByManga(ctx context.Context, mangaID string
 	chapters := make([]domain.Chapter, 0, len(rows))
 	for _, ch := range rows {
 		chapters = append(chapters, domain.Chapter{
-			MangaSlug: ch.MangaID,
-			Number:    ch.Name,
-			SortKey:   float64(ch.ChapterOrder),
-			Language:  ch.Lang,
+			MangaID:  ch.MangaID,
+			Number:   ch.Name,
+			SortKey:  float64(ch.ChapterOrder),
+			Language: ch.Lang,
 		})
 	}
 	return chapters, nil
@@ -315,10 +515,6 @@ func (r *MySQLRepository) UpsertDictionary(ctx context.Context, entry domain.Dic
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	var refreshedAt sql.NullTime
-	if entry.RefreshedAt != nil {
-		refreshedAt = sql.NullTime{Time: *entry.RefreshedAt, Valid: true}
-	}
 	return r.q.UpsertDictionary(ctx, queries.UpsertDictionaryParams{
 		ID:          entry.ID,
 		Slug:        entry.Slug,
@@ -326,9 +522,7 @@ func (r *MySQLRepository) UpsertDictionary(ctx context.Context, entry domain.Dic
 		Sources:     sourcesJSON,
 		SourceStats: statsJSON,
 		BestSource:  bestJSON,
-		State:       string(entry.State),
 		CoverUrl:    entry.CoverURL,
-		RefreshedAt: refreshedAt,
 		CreatedAt:   createdAt,
 	})
 }
@@ -341,7 +535,7 @@ func (r *MySQLRepository) GetDictionary(ctx context.Context, id string) (domain.
 	if err != nil {
 		return domain.DictionaryEntry{}, false, err
 	}
-	return r.scanToEntry(row), true, nil
+	return r.scanToDictionaryRow(row), true, nil
 }
 
 func (r *MySQLRepository) GetDictionaryBySlug(ctx context.Context, slug string) (domain.DictionaryEntry, bool, error) {
@@ -352,7 +546,7 @@ func (r *MySQLRepository) GetDictionaryBySlug(ctx context.Context, slug string) 
 	if err != nil {
 		return domain.DictionaryEntry{}, false, err
 	}
-	return r.scanToEntry(row), true, nil
+	return r.scanToDictionaryBySlugRow(row), true, nil
 }
 
 func (r *MySQLRepository) ListDictionary(ctx context.Context, filter domain.DictionaryFilter) (domain.DictionaryPage, error) {
@@ -395,13 +589,8 @@ func (r *MySQLRepository) ListDictionary(ctx context.Context, filter domain.Dict
 			Sources:     sources,
 			SourceStats: sourceStats,
 			BestSource:  best,
-			State:       domain.MangaState(row.State),
 		}
 		e.CreatedAt = row.CreatedAt
-		if row.RefreshedAt.Valid {
-			t := row.RefreshedAt.Time
-			e.RefreshedAt = &t
-		}
 		entries = append(entries, e)
 	}
 
@@ -418,96 +607,68 @@ func (r *MySQLRepository) ListDictionary(ctx context.Context, filter domain.Dict
 	}, nil
 }
 
-func (r *MySQLRepository) SetDictionaryState(ctx context.Context, id string, state domain.MangaState) error {
-	return r.q.SetDictionaryState(ctx, queries.SetDictionaryStateParams{
-		State: string(state),
-		ID:    id,
-	})
-}
-
-func (r *MySQLRepository) SetDictionaryStateBySlug(ctx context.Context, slug string, state domain.MangaState) error {
-	return r.q.SetDictionaryStateBySlug(ctx, queries.SetDictionaryStateBySlugParams{
-		State: string(state),
-		Slug:  slug,
-	})
-}
-
-func (r *MySQLRepository) scanToEntry(row queries.Dictionary) domain.DictionaryEntry {
-	var sources, best map[string]string
-	var sourceStats map[string]domain.SourceStat
-	json.Unmarshal([]byte(row.Sources), &sources)
-	json.Unmarshal([]byte(row.SourceStats), &sourceStats)
-	json.Unmarshal([]byte(row.BestSource), &best)
-
-	e := domain.DictionaryEntry{
-		ID:          row.ID,
-		Slug:        row.Slug,
-		Title:       row.Title,
-		CoverURL:    row.CoverUrl,
-		Sources:     sources,
-		SourceStats: sourceStats,
-		BestSource:  best,
-		State:       domain.MangaState(row.State),
+func (r *MySQLRepository) UpsertDictionaryBatch(ctx context.Context, entries []domain.DictionaryEntry) error {
+	if len(entries) == 0 {
+		return nil
 	}
-	e.CreatedAt = row.CreatedAt
-	if row.RefreshedAt.Valid {
-		t := row.RefreshedAt.Time
-		e.RefreshedAt = &t
-	}
-	return e
-}
-
-// Watchlist methods
-
-func (r *MySQLRepository) ListWatchlist(ctx context.Context) ([]domain.WatchlistEntry, error) {
-	rows, err := r.q.ListWatchlist(ctx)
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	entries := make([]domain.WatchlistEntry, 0, len(rows))
-	for _, row := range rows {
-		var sources map[string]string
-		json.Unmarshal(row.Sources, &sources)
-		e := domain.WatchlistEntry{
-			ID:           row.ID,
-			Slug:         row.Slug,
-			Title:        row.Title,
-			DictionaryID: row.DictionaryID,
-			Sources:      sources,
+	defer tx.Rollback()
+
+	for _, entry := range entries {
+		sourcesJSON, _ := json.Marshal(entry.Sources)
+		statsJSON, _ := json.Marshal(entry.SourceStats)
+		bestJSON, _ := json.Marshal(entry.BestSource)
+		createdAt := entry.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = time.Now().UTC()
 		}
-		if row.LastCheckedAt.Valid {
-			t := row.LastCheckedAt.Time
-			e.LastChecked = &t
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO dictionary (id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+			ON DUPLICATE KEY UPDATE
+			    title=VALUES(title),
+			    sources=JSON_MERGE_PATCH(dictionary.sources, VALUES(sources)),
+			    source_stats=CASE WHEN VALUES(source_stats) != '{}' THEN VALUES(source_stats) ELSE dictionary.source_stats END,
+			    best_source=CASE WHEN VALUES(best_source) != '{}' THEN VALUES(best_source) ELSE dictionary.best_source END,
+			    cover_url=CASE WHEN VALUES(cover_url) != '' THEN VALUES(cover_url) ELSE dictionary.cover_url END,
+			    updated_at=CURRENT_TIMESTAMP`,
+			entry.ID, entry.Slug, entry.Title, sourcesJSON, statsJSON, bestJSON, entry.CoverURL, createdAt)
+		if err != nil {
+			return err
 		}
-		entries = append(entries, e)
 	}
-	return entries, nil
+
+	return tx.Commit()
 }
 
-func (r *MySQLRepository) AddWatchlist(ctx context.Context, entry domain.WatchlistEntry) error {
-	sourcesJSON, _ := json.Marshal(entry.Sources)
-	id := entry.ID
-	if id == "" {
-		id = uuid.New().String()
+func (r *MySQLRepository) scanToDictionaryRow(row queries.GetDictionaryRow) domain.DictionaryEntry {
+	return scanToDictionaryEntryImpl(row.ID, row.Slug, row.Title, row.CoverUrl, row.Sources, row.SourceStats, row.BestSource, row.CreatedAt)
+}
+
+func (r *MySQLRepository) scanToDictionaryBySlugRow(row queries.GetDictionaryBySlugRow) domain.DictionaryEntry {
+	return scanToDictionaryEntryImpl(row.ID, row.Slug, row.Title, row.CoverUrl, row.Sources, row.SourceStats, row.BestSource, row.CreatedAt)
+}
+
+func scanToDictionaryEntryImpl(id, slug, title, coverUrl string, sources, sourceStats, bestSource []byte, createdAt time.Time) domain.DictionaryEntry {
+	var srcs, best map[string]string
+	var stats map[string]domain.SourceStat
+	json.Unmarshal(sources, &srcs)
+	json.Unmarshal(sourceStats, &stats)
+	json.Unmarshal(bestSource, &best)
+
+	return domain.DictionaryEntry{
+		ID:          id,
+		Slug:        slug,
+		Title:       title,
+		CoverURL:    coverUrl,
+		Sources:     srcs,
+		SourceStats: stats,
+		BestSource:  best,
+		CreatedAt:   createdAt,
 	}
-	return r.q.AddWatchlist(ctx, queries.AddWatchlistParams{
-		ID:           id,
-		Slug:         entry.Slug,
-		Title:        entry.Title,
-		Sources:      sourcesJSON,
-		DictionaryID: sql.NullString{String: entry.DictionaryID, Valid: entry.DictionaryID != ""},
-	})
-}
-
-func (r *MySQLRepository) RemoveWatchlist(ctx context.Context, slug string) error {
-	return r.q.RemoveWatchlist(ctx, slug)
-}
-
-func (r *MySQLRepository) UpdateLastChecked(ctx context.Context, slug string, t time.Time) error {
-	return r.q.UpdateLastChecked(ctx, queries.UpdateLastCheckedParams{
-		LastCheckedAt: sql.NullTime{Time: t, Valid: true},
-		Slug:          slug,
-	})
 }
 
 // Ingest methods

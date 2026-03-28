@@ -12,13 +12,13 @@ import (
 
 type Chapter struct {
 	ID           string
-	MangaID      string
 	Name         string
 	ChapterOrder int32
 	Lang         string
 	ImageSrc     string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	MangaID      string
 }
 
 type Dictionary struct {
@@ -28,31 +28,22 @@ type Dictionary struct {
 	Sources     json.RawMessage
 	SourceStats json.RawMessage
 	BestSource  json.RawMessage
-	State       string
 	CoverUrl    string
-	RefreshedAt sql.NullTime
 	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type Manga struct {
-	Slug        string
-	Uuid        string
-	Title       string
-	Description string
-	Status      string
-	Authors     json.RawMessage
-	Genres      json.RawMessage
-	CoverUrl    string
-	SyncedAt    time.Time
-}
-
-type Watchlist struct {
-	Slug          string
-	Title         string
-	IntervalHours int32
-	Period        string
-	LastCheckedAt sql.NullTime
-	Sources       json.RawMessage
-	DictionaryID  sql.NullString
-	ID            string
+	ID             string
+	DictionaryID   string
+	Title          string
+	Description    string
+	Status         string
+	Authors        json.RawMessage
+	Genres         json.RawMessage
+	CoverUrl       string
+	State          string
+	ChaptersByLang json.RawMessage
+	UpdatedAt      sql.NullTime
+	CreatedAt      sql.NullTime
 }

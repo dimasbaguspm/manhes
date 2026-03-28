@@ -10,17 +10,10 @@ import (
 	"manga-engine/pkg/concurrent"
 )
 
-func (s *DictionaryService) RunDaemon(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.refreshAll(ctx)
-		}
-	}
+// RefreshAll refreshes all dictionary entries and publishes DictionaryUpdated events
+// for entries that have changed.
+func (s *DictionaryService) RefreshAll(ctx context.Context) {
+	s.refreshAll(ctx)
 }
 
 func (s *DictionaryService) refreshAll(ctx context.Context) {
@@ -41,6 +34,12 @@ func (s *DictionaryService) refreshAll(ctx context.Context) {
 }
 
 func (s *DictionaryService) refresh(ctx context.Context, id string) (bool, error) {
+	return s.refreshWithOldState(ctx, id, nil)
+}
+
+// refreshWithOldState fetches source stats for all known sources, optionally
+// compares against pre-merge oldSources to detect changes, and persists updates.
+func (s *DictionaryService) refreshWithOldState(ctx context.Context, id string, oldSources map[string]string) (bool, error) {
 	entry, found, err := s.repo.GetDictionary(ctx, id)
 	if err != nil || !found {
 		return false, err
@@ -96,8 +95,8 @@ func (s *DictionaryService) refresh(ctx context.Context, id string) (bool, error
 		newBest[lang] = b.source
 	}
 
-	// Check if total chapter counts or available languages changed.
-	changed := statsChanged(entry.SourceStats, newStats)
+	// Check if sources, stats, or best-source mapping changed.
+	changed := entryChanged(entry, oldSources, newStats, newBest)
 
 	if entry.CoverURL == "" {
 		entry.CoverURL = s.fetchCover(ctx, entry, ordered)
@@ -106,15 +105,45 @@ func (s *DictionaryService) refresh(ctx context.Context, id string) (bool, error
 	now := time.Now()
 	entry.SourceStats = newStats
 	entry.BestSource = newBest
-	entry.RefreshedAt = &now
+	entry.UpdatedAt = &now
 	if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
 		return false, err
 	}
 
-	// Populate manga table with scraped metadata for newly discovered entries
-	// (before ingest has run). Skip if already ingested to avoid redundant HTTP calls.
-	s.syncMangaMetadata(ctx, entry, ordered)
 	return changed, nil
+}
+
+// entryChanged compares pre-merge (oldSources) and post-merge (entry.Sources) state
+// along with SourceStats and BestSource to determine if the entry meaningfully changed.
+func entryChanged(entry domain.DictionaryEntry, oldSources map[string]string, newStats map[string]domain.SourceStat, newBest map[string]string) bool {
+	// Compare Sources: check if any source was added or removed.
+	if oldSources != nil {
+		if len(oldSources) != len(entry.Sources) {
+			return true
+		}
+		for name, oldID := range oldSources {
+			if entry.Sources[name] != oldID {
+				return true
+			}
+		}
+	}
+
+	// Compare SourceStats: check if total chapter counts per language changed.
+	if statsChanged(entry.SourceStats, newStats) {
+		return true
+	}
+
+	// Compare BestSource: check if language→source mapping changed.
+	if len(entry.BestSource) != len(newBest) {
+		return true
+	}
+	for lang, oldSrc := range entry.BestSource {
+		if newSrc, ok := newBest[lang]; !ok || newSrc != oldSrc {
+			return true
+		}
+	}
+
+	return false
 }
 
 // statsChanged compares two SourceStats maps and returns true if the total
@@ -145,31 +174,6 @@ func statsChanged(oldStats, newStats map[string]domain.SourceStat) bool {
 		}
 	}
 	return false
-}
-
-// syncMangaMetadata populates the manga catalog table with metadata from the
-// best available scraper source. It only runs when no manga entry exists yet
-// (i.e., before ingest), so it does not override ingested data.
-func (s *DictionaryService) syncMangaMetadata(ctx context.Context, entry domain.DictionaryEntry, ordered []domain.Scraper) {
-	if _, found, err := s.repo.GetMangaBySlug(ctx, entry.Slug); err != nil || found {
-		return
-	}
-	for _, src := range ordered {
-		sourceID, ok := entry.Sources[src.Source()]
-		if !ok {
-			continue
-		}
-		manga, err := src.FetchMangaDetail(ctx, sourceID)
-		if err != nil || manga == nil {
-			continue
-		}
-		manga.Slug = entry.Slug
-		manga.CoverURL = entry.CoverURL // use S3 URL from dictionary
-		if err := s.repo.UpsertManga(ctx, *manga); err != nil {
-			s.log.Warn("dictionary refresh: sync manga metadata", "slug", entry.Slug, "err", err)
-		}
-		return
-	}
 }
 
 func (s *DictionaryService) fetchSourceStat(ctx context.Context, src domain.Scraper, sourceID string) domain.SourceStat {

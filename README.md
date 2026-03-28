@@ -17,7 +17,7 @@ A self-hosted manga library. Manhes scrapes metadata and chapters from multiple 
 ## Features
 
 - **Multi-source ingestion** — scrapes in parallel, picks the best source per language by chapter count
-- **Event-driven pipeline** — Kafka/Redpanda decouples scraping, downloading, and S3 upload
+- **Event-driven pipeline** — an in-memory event bus decouples retrieval, file upload, and S3 storage
 - **Web reader** — vertical strip layout, auto-scroll, zoom, header auto-hide, progress bar
 - **Watchlist** — add a manga once, background daemons keep it up to date
 - **Single binary** — React SPA embedded into the Go binary via `//go:embed`
@@ -29,7 +29,7 @@ A self-hosted manga library. Manhes scrapes metadata and chapters from multiple 
 | Layer | Technology |
 |---|---|
 | Backend | Go 1.25, Chi, MySQL 8 |
-| Queue | Kafka / Redpanda |
+| Event bus | In-memory synchronous bus (pkg/eventbus) |
 | Storage | MinIO (S3-compatible) |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | API docs | Swagger / OpenAPI |
@@ -83,7 +83,29 @@ The binary serves the React SPA at `/` and the REST API at `/api/v1/`. Wire up R
 
 ---
 
-## Configuration
+## Architecture
+
+The ingest pipeline is fully event-driven, orchestrated by an in-memory event bus:
+
+```
+IngestDaemon (periodic tick)
+  └─> DictionaryUpdated
+       └─> MangaService (upserts manga metadata)
+            └─> IngestRequested
+                 └─> RetrievalHandler (fetchFromSources + diff)
+                      └─> ChaptersFound
+                           └─> FileUploadService (download → ChapterDownloaded → S3 upload → ChapterUploaded → cleanup)
+```
+
+**Services:**
+- `IngestDaemon` — periodically refreshes manga dictionary entries and cleans up orphaned disk directories
+- `RetrievalHandler` — reacts to `IngestRequested`, fetches manga/chapter data from sources, publishes `ChaptersFound`
+- `FileUploadService` — reacts to `ChaptersFound`, downloads pages to disk, uploads to S3, publishes `ChapterDownloaded` and `ChapterUploaded`, cleans up local files
+- `MangaService` — reacts to `DictionaryUpdated`, upserts manga metadata, publishes `IngestRequested`
+
+**Events:** `DictionaryUpdated` → `IngestRequested` → `ChaptersFound` → `ChapterDownloaded` / `ChapterUploaded`
+
+---
 
 All config is via environment variables (`.env` file or injected at runtime). Copy `.env.example` to get started.
 
@@ -96,12 +118,9 @@ All config is via environment variables (`.env` file or injected at runtime). Co
 | `DB_NAME` | `manhes` | MySQL database name |
 | `DB_MAX_OPEN_CONNS` | `25` | Max open connections in the pool |
 | `DB_MAX_IDLE_CONNS` | `5` | Max idle connections in the pool |
-| `INGEST_WORKERS` | `5` | Max parallel ingest jobs |
-| `INGEST_INTERVAL` | `30m` | How often the watchlist daemon re-publishes ingest events |
-| `SYNC_INTERVAL` | `15m` | How often the sync daemon scans for missed chapters |
+| `INGEST_CONCURRENCY` | `4` | Max concurrent download/upload workers per chapter job |
 | `DOWNLOADER_TIMEOUT` | `30s` | HTTP timeout for page/cover downloads |
-| `DICTIONARY_REFRESH_INTERVAL` | `4h` | How often source stats are refreshed |
-| `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list |
+| `DICTIONARY_REFRESH_INTERVAL` | `4h` | How often the ingest daemon refreshes manga entries |
 | `S3_ENDPOINT` | `minio:9000` | MinIO/S3 endpoint |
 | `S3_BUCKET` | `manga` | Bucket name |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `minioadmin` | Credentials |
