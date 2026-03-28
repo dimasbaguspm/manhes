@@ -23,7 +23,7 @@ type Config struct {
 
 	Database DatabaseConfig
 	S3       S3Config
-	Kafka    KafkaConfig
+	Bus      BusConfig
 	Mangadex MangadexConfig
 	Atsu     AtsuConfig
 }
@@ -50,7 +50,7 @@ func Load() (*Config, error) {
 
 		Database: loadDatabaseConfig(),
 		S3:       loadS3Config(),
-		Kafka:    loadKafkaConfig(),
+		Bus:      loadBusConfig(),
 		Mangadex: loadMangadexConfig(),
 		Atsu:     loadAtsuConfig(),
 	}, nil

@@ -10,16 +10,20 @@ import (
 )
 
 const getDownloadedByLang = `-- name: GetDownloadedByLang :many
-SELECT language, COUNT(*) FROM ingest_chapters WHERE slug = ? GROUP BY language
+
+SELECT lang, COUNT(*) AS count FROM chapters WHERE manga_id = ? GROUP BY lang
 `
 
 type GetDownloadedByLangRow struct {
-	Language string
-	Count    int64
+	Lang  string
+	Count int64
 }
 
-func (q *Queries) GetDownloadedByLang(ctx context.Context, slug string) ([]GetDownloadedByLangRow, error) {
-	rows, err := q.db.QueryContext(ctx, getDownloadedByLang, slug)
+// ingest.sql: chapter ingestion queries (replaced ingest_chapters)
+// Chapter existence is now tracked via the chapters table.
+// Returns language and count of chapters ingested per language for a manga.
+func (q *Queries) GetDownloadedByLang(ctx context.Context, mangaID string) ([]GetDownloadedByLangRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDownloadedByLang, mangaID)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +31,7 @@ func (q *Queries) GetDownloadedByLang(ctx context.Context, slug string) ([]GetDo
 	var items []GetDownloadedByLangRow
 	for rows.Next() {
 		var i GetDownloadedByLangRow
-		if err := rows.Scan(&i.Language, &i.Count); err != nil {
+		if err := rows.Scan(&i.Lang, &i.Count); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -42,27 +46,28 @@ func (q *Queries) GetDownloadedByLang(ctx context.Context, slug string) ([]GetDo
 }
 
 const getDownloadedChaptersByLang = `-- name: GetDownloadedChaptersByLang :many
-SELECT chapter_num FROM ingest_chapters WHERE slug = ? AND language = ? ORDER BY sort_key ASC
+SELECT chapter_order FROM chapters WHERE manga_id = ? AND lang = ? ORDER BY chapter_order ASC
 `
 
 type GetDownloadedChaptersByLangParams struct {
-	Slug     string
-	Language string
+	MangaID string
+	Lang    string
 }
 
-func (q *Queries) GetDownloadedChaptersByLang(ctx context.Context, arg GetDownloadedChaptersByLangParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getDownloadedChaptersByLang, arg.Slug, arg.Language)
+// Returns chapter_order values for chapters of a manga in a given language.
+func (q *Queries) GetDownloadedChaptersByLang(ctx context.Context, arg GetDownloadedChaptersByLangParams) ([]int32, error) {
+	rows, err := q.db.QueryContext(ctx, getDownloadedChaptersByLang, arg.MangaID, arg.Lang)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []int32
 	for rows.Next() {
-		var chapter_num string
-		if err := rows.Scan(&chapter_num); err != nil {
+		var chapter_order int32
+		if err := rows.Scan(&chapter_order); err != nil {
 			return nil, err
 		}
-		items = append(items, chapter_num)
+		items = append(items, chapter_order)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -71,46 +76,4 @@ func (q *Queries) GetDownloadedChaptersByLang(ctx context.Context, arg GetDownlo
 		return nil, err
 	}
 	return items, nil
-}
-
-const isChapterDownloaded = `-- name: IsChapterDownloaded :one
-
-SELECT COUNT(*) FROM ingest_chapters WHERE slug = ? AND language = ? AND chapter_num = ?
-`
-
-type IsChapterDownloadedParams struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-}
-
-// ingest.sql: ingest_chapters table
-func (q *Queries) IsChapterDownloaded(ctx context.Context, arg IsChapterDownloadedParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, isChapterDownloaded, arg.Slug, arg.Language, arg.ChapterNum)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const markChapterDownloaded = `-- name: MarkChapterDownloaded :exec
-INSERT INTO ingest_chapters (slug, language, chapter_num, sort_key)
-VALUES (?, ?, ?, ?)
-ON DUPLICATE KEY UPDATE sort_key=VALUES(sort_key)
-`
-
-type MarkChapterDownloadedParams struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	SortKey    float64
-}
-
-func (q *Queries) MarkChapterDownloaded(ctx context.Context, arg MarkChapterDownloadedParams) error {
-	_, err := q.db.ExecContext(ctx, markChapterDownloaded,
-		arg.Slug,
-		arg.Language,
-		arg.ChapterNum,
-		arg.SortKey,
-	)
-	return err
 }

@@ -56,28 +56,6 @@ services:
       mc anonymous set public local/${S3_BUCKET}
       "
 
-  redpanda:
-    image: redpandadata/redpanda:latest
-    command: >
-      redpanda start
-      --overprovisioned
-      --smp 1
-      --memory 512M
-      --reserve-memory 0M
-      --node-id 0
-      --check=false
-      --kafka-addr PLAINTEXT://0.0.0.0:9092
-      --advertise-kafka-addr PLAINTEXT://redpanda:9092
-    restart: unless-stopped
-    ports:
-      - "9092:9092"
-    healthcheck:
-      test: ["CMD", "rpk", "cluster", "info", "--brokers=localhost:9092"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 10s
-
   manhes:
     build:
       context: ..
@@ -95,8 +73,6 @@ services:
       - ${HOME}/.cache/go-build:/root/.cache/go-build
     depends_on:
       mysql:
-        condition: service_healthy
-      redpanda:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully

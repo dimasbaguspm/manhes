@@ -5,31 +5,38 @@ import (
 	"fmt"
 	"log/slog"
 
+	"manga-engine/config"
 	"manga-engine/internal/domain"
 )
 
 var _ domain.WatchlistManager = (*WatchlistService)(nil)
 
-type WatchlistService struct {
-	repo      domain.Repository
-	dict      *DictionaryService
-	registry  domain.SourceRegistry
-	publisher domain.EventPublisher
-	log       *slog.Logger
+// WatchlistServiceConfig holds dependencies for WatchlistService.
+type WatchlistServiceConfig struct {
+	Repo     domain.Repository
+	Dict     *DictionaryService
+	Registry domain.SourceRegistry
+	Bus      domain.EventBus
+	Cfg      *config.Config
 }
 
-func NewWatchlistService(
-	repo domain.Repository,
-	dict *DictionaryService,
-	reg domain.SourceRegistry,
-	pub domain.EventPublisher,
-) *WatchlistService {
+type WatchlistService struct {
+	repo     domain.Repository
+	dict     *DictionaryService
+	registry domain.SourceRegistry
+	bus      domain.EventBus
+	cfg      *config.Config
+	log      *slog.Logger
+}
+
+func NewWatchlistService(cfg WatchlistServiceConfig) *WatchlistService {
 	return &WatchlistService{
-		repo:      repo,
-		dict:      dict,
-		registry:  reg,
-		publisher: pub,
-		log:       slog.With("service", "watchlist"),
+		repo:     cfg.Repo,
+		dict:     cfg.Dict,
+		registry: cfg.Registry,
+		bus:      cfg.Bus,
+		cfg:      cfg.Cfg,
+		log:      slog.With("service", "watchlist"),
 	}
 }
 
@@ -57,9 +64,10 @@ func (s *WatchlistService) AddByDictionaryID(ctx context.Context, dictionaryID s
 	go s.dict.refresh(context.Background(), dictionaryID)
 
 	sources := s.sourcesForIngest(entry)
-	return entry.Slug, s.publisher.PublishIngestRequested(ctx, domain.IngestRequested{
-		Slug:         entry.Slug,
-		Sources:      sources,
+	return entry.Slug, s.bus.Publish(ctx, s.cfg.Bus.IngestRequested, domain.IngestRequested{
+		DictionaryID: entry.ID,
+		Slug:        entry.Slug,
+		Sources:     sources,
 		LangToSource: entry.BestSource,
 	})
 }

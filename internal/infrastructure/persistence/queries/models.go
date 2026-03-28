@@ -10,12 +10,15 @@ import (
 	"time"
 )
 
-type ChapterPage struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	PageIndex  int32
-	S3Url      string
+type Chapter struct {
+	ID           string
+	MangaID      string
+	Name         string
+	ChapterOrder int32
+	Lang         string
+	ImageSrc     string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type Dictionary struct {
@@ -31,14 +34,6 @@ type Dictionary struct {
 	CreatedAt   time.Time
 }
 
-type IngestChapter struct {
-	Slug         string
-	Language     string
-	ChapterNum   string
-	SortKey      float64
-	DownloadedAt time.Time
-}
-
 type Manga struct {
 	Slug        string
 	Uuid        string
@@ -49,23 +44,6 @@ type Manga struct {
 	Genres      json.RawMessage
 	CoverUrl    string
 	SyncedAt    time.Time
-}
-
-type MangaChapter struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	SortKey    float64
-	PageCount  int32
-	Uploaded   bool
-	UploadedAt sql.NullTime
-}
-
-type MangaLang struct {
-	Slug       string
-	Language   string
-	Available  int32
-	Downloaded int32
 }
 
 type Watchlist struct {

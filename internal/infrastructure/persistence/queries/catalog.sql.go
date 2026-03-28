@@ -12,130 +12,6 @@ import (
 	"time"
 )
 
-const getChapterPages = `-- name: GetChapterPages :many
-SELECT s3_url FROM chapter_pages WHERE slug=? AND language=? AND chapter_num=? ORDER BY page_index
-`
-
-type GetChapterPagesParams struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-}
-
-func (q *Queries) GetChapterPages(ctx context.Context, arg GetChapterPagesParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getChapterPages, arg.Slug, arg.Language, arg.ChapterNum)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var s3_url string
-		if err := rows.Scan(&s3_url); err != nil {
-			return nil, err
-		}
-		items = append(items, s3_url)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getChaptersByLang = `-- name: GetChaptersByLang :many
-SELECT slug, language, chapter_num, page_count, uploaded_at
-FROM manga_chapters WHERE slug=? AND language=? AND uploaded=TRUE ORDER BY sort_key ASC
-`
-
-type GetChaptersByLangParams struct {
-	Slug     string
-	Language string
-}
-
-type GetChaptersByLangRow struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	PageCount  int32
-	UploadedAt sql.NullTime
-}
-
-func (q *Queries) GetChaptersByLang(ctx context.Context, arg GetChaptersByLangParams) ([]GetChaptersByLangRow, error) {
-	rows, err := q.db.QueryContext(ctx, getChaptersByLang, arg.Slug, arg.Language)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetChaptersByLangRow
-	for rows.Next() {
-		var i GetChaptersByLangRow
-		if err := rows.Scan(
-			&i.Slug,
-			&i.Language,
-			&i.ChapterNum,
-			&i.PageCount,
-			&i.UploadedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getChaptersBySlug = `-- name: GetChaptersBySlug :many
-SELECT slug, language, chapter_num, page_count, uploaded, uploaded_at
-FROM manga_chapters WHERE slug=? ORDER BY language, sort_key
-`
-
-type GetChaptersBySlugRow struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	PageCount  int32
-	Uploaded   bool
-	UploadedAt sql.NullTime
-}
-
-func (q *Queries) GetChaptersBySlug(ctx context.Context, slug string) ([]GetChaptersBySlugRow, error) {
-	rows, err := q.db.QueryContext(ctx, getChaptersBySlug, slug)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetChaptersBySlugRow
-	for rows.Next() {
-		var i GetChaptersBySlugRow
-		if err := rows.Scan(
-			&i.Slug,
-			&i.Language,
-			&i.ChapterNum,
-			&i.PageCount,
-			&i.Uploaded,
-			&i.UploadedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getMangaBySlug = `-- name: GetMangaBySlug :one
 SELECT m.slug, m.title, m.status, m.description, m.authors, m.genres, m.cover_url,
        d.id AS dict_id, d.state
@@ -173,104 +49,6 @@ func (q *Queries) GetMangaBySlug(ctx context.Context, slug string) (GetMangaBySl
 	return i, err
 }
 
-const getMangaLangsBySlug = `-- name: GetMangaLangsBySlug :many
-SELECT language, available, downloaded FROM manga_langs WHERE slug=? ORDER BY language
-`
-
-type GetMangaLangsBySlugRow struct {
-	Language   string
-	Available  int32
-	Downloaded int32
-}
-
-func (q *Queries) GetMangaLangsBySlug(ctx context.Context, slug string) ([]GetMangaLangsBySlugRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMangaLangsBySlug, slug)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetMangaLangsBySlugRow
-	for rows.Next() {
-		var i GetMangaLangsBySlugRow
-		if err := rows.Scan(&i.Language, &i.Available, &i.Downloaded); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getPendingChapters = `-- name: GetPendingChapters :many
-SELECT mc.slug, mc.language, mc.chapter_num, COALESCE(d.id, '') AS dictionary_id
-FROM manga_chapters mc
-LEFT JOIN dictionary d ON d.slug = mc.slug
-WHERE mc.uploaded=FALSE
-ORDER BY mc.slug, mc.language, mc.sort_key
-`
-
-type GetPendingChaptersRow struct {
-	Slug         string
-	Language     string
-	ChapterNum   string
-	DictionaryID string
-}
-
-func (q *Queries) GetPendingChapters(ctx context.Context) ([]GetPendingChaptersRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPendingChapters)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetPendingChaptersRow
-	for rows.Next() {
-		var i GetPendingChaptersRow
-		if err := rows.Scan(
-			&i.Slug,
-			&i.Language,
-			&i.ChapterNum,
-			&i.DictionaryID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const hasPendingChapters = `-- name: HasPendingChapters :one
-SELECT COUNT(*) FROM manga_chapters WHERE slug=? AND uploaded=FALSE
-`
-
-func (q *Queries) HasPendingChapters(ctx context.Context, slug string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, hasPendingChapters, slug)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const hasUploadedChapters = `-- name: HasUploadedChapters :one
-SELECT COUNT(*) FROM manga_chapters WHERE slug=? AND uploaded=TRUE
-`
-
-func (q *Queries) HasUploadedChapters(ctx context.Context, slug string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, hasUploadedChapters, slug)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const listManga = `-- name: ListManga :many
 WITH filtered AS (
     SELECT d.id AS dict_id, d.slug, d.state,
@@ -288,12 +66,14 @@ WITH filtered AS (
       AND (? = '' OR m.status = ?)
       AND (? = FALSE OR d.state != 'unavailable')
 ),
-counted AS (SELECT COUNT(*) AS total FROM filtered)
+counted AS (SELECT COUNT(*) AS total FROM filtered),
+langs AS (SELECT manga_id, JSON_ARRAYAGG(lang) AS langs FROM (SELECT DISTINCT manga_id, lang FROM chapters) t GROUP BY manga_id)
 SELECT f.dict_id, f.slug, f.state, f.title, f.status, f.description,
        f.cover_url, f.authors, f.genres, f.synced_at,
-       COALESCE((SELECT JSON_ARRAYAGG(language) FROM manga_langs WHERE slug = f.slug), '[]') AS languages,
+       COALESCE(l.langs, '[]') AS languages,
        c.total
 FROM filtered f, counted c
+LEFT JOIN langs l ON l.manga_id = f.slug
 ORDER BY CASE WHEN ? = 'last_update' THEN f.synced_at END DESC,
          CASE WHEN ? != 'last_update' THEN f.title END ASC
 LIMIT ? OFFSET ?
@@ -324,7 +104,7 @@ type ListMangaRow struct {
 	Authors     json.RawMessage
 	Genres      json.RawMessage
 	SyncedAt    time.Time
-	Languages   interface{}
+	Languages   json.RawMessage
 	Total       int64
 }
 
@@ -376,69 +156,6 @@ func (q *Queries) ListManga(ctx context.Context, arg ListMangaParams) ([]ListMan
 	return items, nil
 }
 
-const markChapterUploaded = `-- name: MarkChapterUploaded :exec
-UPDATE manga_chapters SET uploaded=TRUE, uploaded_at=CURRENT_TIMESTAMP WHERE slug=? AND language=? AND chapter_num=?
-`
-
-type MarkChapterUploadedParams struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-}
-
-func (q *Queries) MarkChapterUploaded(ctx context.Context, arg MarkChapterUploadedParams) error {
-	_, err := q.db.ExecContext(ctx, markChapterUploaded, arg.Slug, arg.Language, arg.ChapterNum)
-	return err
-}
-
-const upsertChapter = `-- name: UpsertChapter :exec
-INSERT INTO manga_chapters (slug, language, chapter_num, sort_key, page_count)
-VALUES (?, ?, ?, ?, ?)
-ON DUPLICATE KEY UPDATE sort_key=VALUES(sort_key), page_count=VALUES(page_count)
-`
-
-type UpsertChapterParams struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	SortKey    float64
-	PageCount  int32
-}
-
-func (q *Queries) UpsertChapter(ctx context.Context, arg UpsertChapterParams) error {
-	_, err := q.db.ExecContext(ctx, upsertChapter,
-		arg.Slug,
-		arg.Language,
-		arg.ChapterNum,
-		arg.SortKey,
-		arg.PageCount,
-	)
-	return err
-}
-
-const upsertLang = `-- name: UpsertLang :exec
-INSERT INTO manga_langs (slug, language, available, downloaded)
-VALUES (?, ?, ?, ?)
-ON DUPLICATE KEY UPDATE available=VALUES(available), downloaded=VALUES(downloaded)
-`
-
-type UpsertLangParams struct {
-	Slug       string
-	Language   string
-	Available  int32
-	Downloaded int32
-}
-
-func (q *Queries) UpsertLang(ctx context.Context, arg UpsertLangParams) error {
-	_, err := q.db.ExecContext(ctx, upsertLang,
-		arg.Slug,
-		arg.Language,
-		arg.Available,
-		arg.Downloaded,
-	)
-	return err
-}
-
 const upsertManga = `-- name: UpsertManga :exec
 
 INSERT INTO manga (uuid, slug, title, description, status, authors, genres, cover_url, synced_at)
@@ -461,7 +178,7 @@ type UpsertMangaParams struct {
 	CoverUrl    string
 }
 
-// catalog.sql: manga, manga_langs, manga_chapters, chapter_pages
+// catalog.sql: manga table only (chapter data moved to chapters table)
 func (q *Queries) UpsertManga(ctx context.Context, arg UpsertMangaParams) error {
 	_, err := q.db.ExecContext(ctx, upsertManga,
 		arg.Uuid,
@@ -472,31 +189,6 @@ func (q *Queries) UpsertManga(ctx context.Context, arg UpsertMangaParams) error 
 		arg.Authors,
 		arg.Genres,
 		arg.CoverUrl,
-	)
-	return err
-}
-
-const upsertPage = `-- name: UpsertPage :exec
-INSERT INTO chapter_pages (slug, language, chapter_num, page_index, s3_url)
-VALUES (?, ?, ?, ?, ?)
-ON DUPLICATE KEY UPDATE s3_url=VALUES(s3_url)
-`
-
-type UpsertPageParams struct {
-	Slug       string
-	Language   string
-	ChapterNum string
-	PageIndex  int32
-	S3Url      string
-}
-
-func (q *Queries) UpsertPage(ctx context.Context, arg UpsertPageParams) error {
-	_, err := q.db.ExecContext(ctx, upsertPage,
-		arg.Slug,
-		arg.Language,
-		arg.ChapterNum,
-		arg.PageIndex,
-		arg.S3Url,
 	)
 	return err
 }

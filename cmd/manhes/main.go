@@ -18,9 +18,10 @@ import (
 
 	"manga-engine/config"
 	"manga-engine/internal/application"
+	"manga-engine/internal/domain"
 	"manga-engine/internal/handler"
 	"manga-engine/internal/infrastructure/downloader"
-	"manga-engine/internal/infrastructure/messaging"
+	"manga-engine/internal/infrastructure/eventbus"
 	"manga-engine/internal/infrastructure/persistence"
 	"manga-engine/internal/infrastructure/s3"
 	"manga-engine/internal/infrastructure/scraper"
@@ -66,30 +67,49 @@ func run(cfg *config.Config, log *slog.Logger) error {
 
 	disk := storage.NewDisk(cfg.LibraryPath)
 
-	producer := messaging.NewProducer(cfg)
-	defer producer.Close()
-	log.Info("[Kafka] producer ready", "brokers", cfg.Kafka.Brokers)
+	bus := eventbus.New()
 
 	reg := buildScraperRegistry(cfg)
 	dl := downloader.New(&http.Client{Timeout: cfg.DownloaderTimeout})
 
-	ingestSvc := application.NewIngestService(repo, reg, dl, disk, producer)
+	ingestSvc := application.NewIngestService(application.IngestServiceConfig{
+		Repo:     repo,
+		Registry: reg,
+		DL:       dl,
+		Disk:     disk,
+		S3:       s3c,
+		Bus:      bus,
+		Cfg:      cfg,
+	})
 	syncSvc := application.NewSyncService(repo, disk, s3c, application.SyncConfig{
 		LibraryPath: cfg.LibraryPath,
 		Interval:    cfg.SyncInterval,
 	})
-	dictSvc := application.NewDictionaryService(repo, reg, dl, s3c, producer, application.DictionaryConfig{
+	dictSvc := application.NewDictionaryService(application.DictionaryServiceConfig{
+		Repo:            repo,
+		Registry:        reg,
+		DL:              dl,
+		S3:              s3c,
+		Bus:             bus,
+		Cfg:             cfg,
 		RefreshInterval: cfg.DictionaryRefreshInterval,
 	})
-	watchlistSvc := application.NewWatchlistService(repo, dictSvc, reg, producer)
+	watchlistSvc := application.NewWatchlistService(application.WatchlistServiceConfig{
+		Repo:     repo,
+		Dict:     dictSvc,
+		Registry: reg,
+		Bus:      bus,
+		Cfg:      cfg,
+	})
 	catalogSvc := application.NewCatalogService(repo)
 
-	ingestConsumer := messaging.NewIngestConsumer(cfg, ingestSvc)
-	syncConsumer := messaging.NewSyncConsumer(cfg, syncSvc)
-
-	go ingestConsumer.Run(ctx)
-	go syncConsumer.Run(ctx)
-	log.Info("[Kafka] consumers started")
+	// Subscribe event handlers
+	bus.Subscribe(cfg.Bus.IngestRequested, func(ctx context.Context, e domain.Event) error {
+		return ingestSvc.Ingest(ctx, e.(domain.IngestRequested))
+	})
+	bus.Subscribe(cfg.Bus.ChapterUploaded, func(ctx context.Context, e domain.Event) error {
+		return syncSvc.HandleChapterUploaded(ctx, e.(domain.ChapterUploaded))
+	})
 
 	go syncSvc.SyncAll(ctx)
 	go watchlistSvc.RunDaemon(ctx)

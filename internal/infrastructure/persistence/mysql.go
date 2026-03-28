@@ -125,11 +125,7 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 		var authors, genres, langs []string
 		json.Unmarshal(row.Authors, &authors)
 		json.Unmarshal(row.Genres, &genres)
-		var langsRaw []byte
-		if row.Languages != nil {
-			langsRaw, _ = row.Languages.([]byte)
-			json.Unmarshal(langsRaw, &langs)
-		}
+		json.Unmarshal(row.Languages, &langs)
 		var updatedAt *time.Time
 		t := row.SyncedAt
 		updatedAt = &t
@@ -201,136 +197,112 @@ func (r *MySQLRepository) GetMangaBySlug(ctx context.Context, slug string) (doma
 }
 
 func (r *MySQLRepository) fillMangaDetail(ctx context.Context, d domain.MangaDetail) (domain.MangaDetail, bool, error) {
-	langRows, err := r.q.GetMangaLangsBySlug(ctx, d.Slug)
+	chRows, err := r.q.GetChaptersByManga(ctx, d.Slug)
 	if err != nil {
 		return domain.MangaDetail{}, false, err
-	}
-	for _, l := range langRows {
-		d.Languages = append(d.Languages, domain.MangaLang{
-			Language:  l.Language,
-			Available: int(l.Available),
-			Fetched:   int(l.Downloaded),
-		})
 	}
 
-	chRows, err := r.q.GetChaptersBySlug(ctx, d.Slug)
-	if err != nil {
-		return domain.MangaDetail{}, false, err
-	}
+	// Group chapters by language
+	langMap := make(map[string]*domain.MangaLang)
+	chapterMap := make(map[string][]domain.MangaChapter)
+
 	for _, ch := range chRows {
+		lang := ch.Lang
+		if _, ok := langMap[lang]; !ok {
+			langMap[lang] = &domain.MangaLang{Language: lang}
+		}
+		langMap[lang].Available++
+
+		pageCount := 1
+		if ch.ImageSrc != "" {
+			pageCount = 1 // imageSrc is base path; actual page count derived from manifest
+		}
+
 		mc := domain.MangaChapter{
-			Slug:       ch.Slug,
-			Language:   ch.Language,
-			ChapterNum: ch.ChapterNum,
-			PageCount:  int(ch.PageCount),
-			Uploaded:   ch.Uploaded,
+			Slug:       ch.MangaID,
+			Language:   lang,
+			ChapterNum: ch.Name,
+			PageCount:  pageCount,
+			Uploaded:   ch.ImageSrc != "",
 		}
-		if ch.UploadedAt.Valid {
-			t := ch.UploadedAt.Time
-			mc.UploadedAt = &t
-		}
-		d.Chapters = append(d.Chapters, mc)
+		chapterMap[lang] = append(chapterMap[lang], mc)
+	}
+
+	for _, l := range langMap {
+		d.Languages = append(d.Languages, *l)
+	}
+	for _, chs := range chapterMap {
+		d.Chapters = append(d.Chapters, chs...)
 	}
 
 	return d, true, nil
 }
 
-func (r *MySQLRepository) HasUploadedChapters(ctx context.Context, slug string) (bool, error) {
-	n, err := r.q.HasUploadedChapters(ctx, slug)
-	return n > 0, err
-}
+// Chapter methods (replaces manga_chapters, manga_langs, chapter_pages, ingest_chapters)
 
-func (r *MySQLRepository) HasPendingChapters(ctx context.Context, slug string) (bool, error) {
-	n, err := r.q.HasPendingChapters(ctx, slug)
-	return n > 0, err
-}
-
-func (r *MySQLRepository) UpsertLang(ctx context.Context, slug, lang string, available, downloaded int) error {
-	return r.q.UpsertLang(ctx, queries.UpsertLangParams{
-		Slug:       slug,
-		Language:   lang,
-		Available:  int32(available),
-		Downloaded: int32(downloaded),
-	})
-}
-
-func (r *MySQLRepository) UpsertChapter(ctx context.Context, slug, lang, num string, sortKey float64, pageCount int) error {
+func (r *MySQLRepository) UpsertChapter(ctx context.Context, id, mangaID, name string, chapterOrder int, lang, imageSrc string) error {
 	return r.q.UpsertChapter(ctx, queries.UpsertChapterParams{
-		Slug:       slug,
-		Language:   lang,
-		ChapterNum: num,
-		SortKey:    sortKey,
-		PageCount:  int32(pageCount),
+		ID:           id,
+		MangaID:      mangaID,
+		Name:         name,
+		ChapterOrder: int32(chapterOrder),
+		Lang:         lang,
+		ImageSrc:     imageSrc,
 	})
 }
 
-func (r *MySQLRepository) MarkChapterUploaded(ctx context.Context, slug, lang, num string) error {
-	return r.q.MarkChapterUploaded(ctx, queries.MarkChapterUploadedParams{
-		Slug:       slug,
-		Language:   lang,
-		ChapterNum: num,
+func (r *MySQLRepository) GetChapterCountByLang(ctx context.Context, mangaID, lang string) (int, error) {
+	n, err := r.q.GetChapterCountByLang(ctx, queries.GetChapterCountByLangParams{
+		MangaID: mangaID,
+		Lang:    lang,
 	})
+	return int(n), err
 }
 
-func (r *MySQLRepository) UpsertPage(ctx context.Context, slug, lang, num string, idx int, url string) error {
-	return r.q.UpsertPage(ctx, queries.UpsertPageParams{
-		Slug:       slug,
-		Language:   lang,
-		ChapterNum: num,
-		PageIndex:  int32(idx),
-		S3Url:      url,
-	})
-}
-
-func (r *MySQLRepository) GetChapterPages(ctx context.Context, slug, lang, num string) ([]string, error) {
-	return r.q.GetChapterPages(ctx, queries.GetChapterPagesParams{
-		Slug:       slug,
-		Language:   lang,
-		ChapterNum: num,
-	})
-}
-
-func (r *MySQLRepository) GetChaptersByLang(ctx context.Context, slug, lang string) ([]domain.MangaChapter, error) {
+func (r *MySQLRepository) GetChaptersByLang(ctx context.Context, mangaID, lang string) ([]domain.Chapter, error) {
 	rows, err := r.q.GetChaptersByLang(ctx, queries.GetChaptersByLangParams{
-		Slug:     slug,
-		Language: lang,
+		MangaID: mangaID,
+		Lang:    lang,
 	})
 	if err != nil {
 		return nil, err
 	}
-	chapters := make([]domain.MangaChapter, 0, len(rows))
+	chapters := make([]domain.Chapter, 0, len(rows))
 	for _, ch := range rows {
-		mc := domain.MangaChapter{
-			Slug:       ch.Slug,
-			Language:   ch.Language,
-			ChapterNum: ch.ChapterNum,
-			PageCount:  int(ch.PageCount),
-			Uploaded:   true,
-		}
-		if ch.UploadedAt.Valid {
-			t := ch.UploadedAt.Time
-			mc.UploadedAt = &t
-		}
-		chapters = append(chapters, mc)
+		chapters = append(chapters, domain.Chapter{
+			MangaSlug: ch.MangaID,
+			Number:    ch.Name,
+			SortKey:   float64(ch.ChapterOrder),
+			Language:  ch.Lang,
+		})
 	}
 	return chapters, nil
 }
 
-func (r *MySQLRepository) GetPendingChapters(ctx context.Context) ([]domain.ChapterRef, error) {
-	rows, err := r.q.GetPendingChapters(ctx)
+func (r *MySQLRepository) GetChaptersByManga(ctx context.Context, mangaID string) ([]domain.Chapter, error) {
+	rows, err := r.q.GetChaptersByManga(ctx, mangaID)
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]domain.ChapterRef, 0, len(rows))
-	for _, row := range rows {
-		refs = append(refs, domain.ChapterRef{
-			DictionaryID: row.DictionaryID,
-			Slug:         row.Slug,
-			Language:     row.Language,
-			ChapterNum:   row.ChapterNum,
+	chapters := make([]domain.Chapter, 0, len(rows))
+	for _, ch := range rows {
+		chapters = append(chapters, domain.Chapter{
+			MangaSlug: ch.MangaID,
+			Number:    ch.Name,
+			SortKey:   float64(ch.ChapterOrder),
+			Language:  ch.Lang,
 		})
 	}
-	return refs, nil
+	return chapters, nil
+}
+
+func (r *MySQLRepository) IsChapterIngested(ctx context.Context, mangaID, lang string, chapterOrder int) (bool, error) {
+	n, err := r.q.IsChapterIngested(ctx, queries.IsChapterIngestedParams{
+		MangaID:      mangaID,
+		Lang:         lang,
+		ChapterOrder: int32(chapterOrder),
+	})
+	return n > 0, err
 }
 
 // Dictionary methods
@@ -540,24 +512,6 @@ func (r *MySQLRepository) UpdateLastChecked(ctx context.Context, slug string, t 
 
 // Ingest methods
 
-func (r *MySQLRepository) IsChapterDownloaded(ctx context.Context, slug, lang, num string) (bool, error) {
-	n, err := r.q.IsChapterDownloaded(ctx, queries.IsChapterDownloadedParams{
-		Slug:       slug,
-		Language:   lang,
-		ChapterNum: num,
-	})
-	return n > 0, err
-}
-
-func (r *MySQLRepository) MarkChapterDownloaded(ctx context.Context, slug, lang, num string, sortKey float64) error {
-	return r.q.MarkChapterDownloaded(ctx, queries.MarkChapterDownloadedParams{
-		Slug:       slug,
-		Language:   lang,
-		ChapterNum: num,
-		SortKey:    sortKey,
-	})
-}
-
 func (r *MySQLRepository) GetDownloadedByLang(ctx context.Context, slug string) (map[string]int, error) {
 	rows, err := r.q.GetDownloadedByLang(ctx, slug)
 	if err != nil {
@@ -565,14 +519,31 @@ func (r *MySQLRepository) GetDownloadedByLang(ctx context.Context, slug string) 
 	}
 	m := make(map[string]int, len(rows))
 	for _, row := range rows {
-		m[row.Language] = int(row.Count)
+		m[row.Lang] = int(row.Count)
 	}
 	return m, nil
 }
 
 func (r *MySQLRepository) GetDownloadedChaptersByLang(ctx context.Context, slug, lang string) ([]string, error) {
-	return r.q.GetDownloadedChaptersByLang(ctx, queries.GetDownloadedChaptersByLangParams{
-		Slug:     slug,
-		Language: lang,
+	rows, err := r.q.GetDownloadedChaptersByLang(ctx, queries.GetDownloadedChaptersByLangParams{
+		MangaID: slug,
+		Lang:    lang,
 	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, fmt.Sprintf("%d", r))
+	}
+	return result, nil
+}
+
+// Manga methods
+
+func (r *MySQLRepository) UpdateMangaCover(ctx context.Context, slug, coverURL string) error {
+	// This is a simple UPDATE for the cover_url field.
+	// We use an exec since there's no generated query for it.
+	_, err := r.db.ExecContext(ctx, "UPDATE manga SET cover_url = ? WHERE slug = ?", coverURL, slug)
+	return err
 }

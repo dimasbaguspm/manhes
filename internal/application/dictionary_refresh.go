@@ -34,16 +34,16 @@ func (s *DictionaryService) refreshAll(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := s.refresh(ctx, e.ID); err != nil {
+		if _, err := s.refresh(ctx, e.ID); err != nil {
 			s.log.Warn("dictionary daemon: refresh", "id", e.ID, "slug", e.Slug, "err", err)
 		}
 	}
 }
 
-func (s *DictionaryService) refresh(ctx context.Context, id string) error {
+func (s *DictionaryService) refresh(ctx context.Context, id string) (bool, error) {
 	entry, found, err := s.repo.GetDictionary(ctx, id)
 	if err != nil || !found {
-		return err
+		return false, err
 	}
 
 	ordered := s.registry.Ordered()
@@ -96,6 +96,9 @@ func (s *DictionaryService) refresh(ctx context.Context, id string) error {
 		newBest[lang] = b.source
 	}
 
+	// Check if total chapter counts or available languages changed.
+	changed := statsChanged(entry.SourceStats, newStats)
+
 	if entry.CoverURL == "" {
 		entry.CoverURL = s.fetchCover(ctx, entry, ordered)
 	}
@@ -105,13 +108,43 @@ func (s *DictionaryService) refresh(ctx context.Context, id string) error {
 	entry.BestSource = newBest
 	entry.RefreshedAt = &now
 	if err := s.repo.UpsertDictionary(ctx, entry); err != nil {
-		return err
+		return false, err
 	}
 
 	// Populate manga table with scraped metadata for newly discovered entries
 	// (before ingest has run). Skip if already ingested to avoid redundant HTTP calls.
 	s.syncMangaMetadata(ctx, entry, ordered)
-	return nil
+	return changed, nil
+}
+
+// statsChanged compares two SourceStats maps and returns true if the total
+// chapter counts per language or the set of available languages differ.
+func statsChanged(oldStats, newStats map[string]domain.SourceStat) bool {
+	// Collect total chapters per language from old and new stats.
+	oldLangs := make(map[string]int)
+	newLangs := make(map[string]int)
+
+	for _, stat := range oldStats {
+		for lang, count := range stat.ChaptersByLang {
+			oldLangs[lang] += count
+		}
+	}
+	for _, stat := range newStats {
+		for lang, count := range stat.ChaptersByLang {
+			newLangs[lang] += count
+		}
+	}
+
+	// Compare language sets and chapter counts.
+	if len(oldLangs) != len(newLangs) {
+		return true
+	}
+	for lang, oldCount := range oldLangs {
+		if newCount, ok := newLangs[lang]; !ok || newCount != oldCount {
+			return true
+		}
+	}
+	return false
 }
 
 // syncMangaMetadata populates the manga catalog table with metadata from the

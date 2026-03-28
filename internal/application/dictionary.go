@@ -7,28 +7,46 @@ import (
 
 	"github.com/google/uuid"
 
+	"manga-engine/config"
 	"manga-engine/internal/domain"
 	"manga-engine/internal/infrastructure/storage"
 )
 
 var _ domain.DictionaryManager = (*DictionaryService)(nil)
 
-type DictionaryConfig struct {
+// DictionaryServiceConfig holds dependencies and config for DictionaryService.
+type DictionaryServiceConfig struct {
+	Repo            domain.Repository
+	Registry        domain.SourceRegistry
+	DL              domain.Downloader
+	S3              domain.ObjectStore
+	Bus             domain.EventBus
+	Cfg             *config.Config
 	RefreshInterval time.Duration
 }
 
 type DictionaryService struct {
-	repo      domain.Repository
-	registry  domain.SourceRegistry
-	dl        domain.Downloader
-	s3c       domain.ObjectStore
-	publisher domain.EventPublisher
-	interval  time.Duration
-	log       *slog.Logger
+	repo     domain.Repository
+	registry domain.SourceRegistry
+	dl       domain.Downloader
+	s3c      domain.ObjectStore
+	bus      domain.EventBus
+	cfg      *config.Config
+	interval time.Duration
+	log      *slog.Logger
 }
 
-func NewDictionaryService(repo domain.Repository, registry domain.SourceRegistry, dl domain.Downloader, s3c domain.ObjectStore, publisher domain.EventPublisher, cfg DictionaryConfig) *DictionaryService {
-	return &DictionaryService{repo: repo, registry: registry, dl: dl, s3c: s3c, publisher: publisher, interval: cfg.RefreshInterval, log: slog.With("service", "dictionary")}
+func NewDictionaryService(cfg DictionaryServiceConfig) *DictionaryService {
+	return &DictionaryService{
+		repo:     cfg.Repo,
+		registry: cfg.Registry,
+		dl:       cfg.DL,
+		s3c:      cfg.S3,
+		bus:      cfg.Bus,
+		cfg:      cfg.Cfg,
+		interval: cfg.RefreshInterval,
+		log:      slog.With("service", "dictionary"),
+	}
 }
 
 func (s *DictionaryService) Search(ctx context.Context, query string) ([]domain.DictionaryEntry, error) {
@@ -119,7 +137,9 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 	}
 
 	// Refresh source stats (chapter counts, cover, best-source selection).
-	if err := s.refresh(ctx, id); err != nil {
+	// Only trigger ingest if total chapters or available languages changed.
+	changed, err := s.refresh(ctx, id)
+	if err != nil {
 		return domain.DictionaryEntry{}, err
 	}
 
@@ -142,12 +162,16 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 		return domain.DictionaryEntry{}, domain.ErrNotFound
 	}
 
-	if err := s.publisher.PublishIngestRequested(ctx, domain.IngestRequested{
-		Slug:         updated.Slug,
-		Sources:      updated.Sources,
-		LangToSource: updated.BestSource,
-	}); err != nil {
-		s.log.Warn("dictionary refresh: publish ingest", "id", id, "err", err)
+	// Only trigger ingest if chapter counts or languages changed.
+	if changed {
+		if err := s.bus.Publish(ctx, s.cfg.Bus.IngestRequested, domain.IngestRequested{
+			DictionaryID: updated.ID,
+			Slug:        updated.Slug,
+			Sources:     updated.Sources,
+			LangToSource: updated.BestSource,
+		}); err != nil {
+			s.log.Warn("dictionary refresh: publish ingest", "id", id, "err", err)
+		}
 	}
 
 	return updated, nil

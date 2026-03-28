@@ -3,7 +3,18 @@ package domain
 import (
 	"context"
 	"time"
+
+	"manga-engine/pkg/eventbus"
 )
+
+// Event is re-exported from pkg/eventbus for domain consumers.
+type Event = eventbus.Event
+
+// Handler is re-exported from pkg/eventbus for domain consumers.
+type Handler = eventbus.Handler
+
+// EventBus is re-exported from pkg/eventbus for domain consumers.
+type EventBus = eventbus.Bus
 
 // Repository is the single port for all DB operations.
 type Repository interface {
@@ -11,15 +22,13 @@ type Repository interface {
 	UpsertManga(ctx context.Context, m Manga) error
 	ListManga(ctx context.Context, filter MangaFilter) (MangaPage, error)
 	GetMangaBySlug(ctx context.Context, slug string) (MangaDetail, bool, error)
-	UpsertLang(ctx context.Context, slug, lang string, available, downloaded int) error
-	UpsertChapter(ctx context.Context, slug, lang, num string, sortKey float64, pageCount int) error
-	MarkChapterUploaded(ctx context.Context, slug, lang, num string) error
-	UpsertPage(ctx context.Context, slug, lang, num string, idx int, url string) error
-	GetChapterPages(ctx context.Context, slug, lang, num string) ([]string, error)
-	GetChaptersByLang(ctx context.Context, slug, lang string) ([]MangaChapter, error)
-	GetPendingChapters(ctx context.Context) ([]ChapterRef, error)
-	HasUploadedChapters(ctx context.Context, slug string) (bool, error)
-	HasPendingChapters(ctx context.Context, slug string) (bool, error)
+
+	// Chapters (replaces manga_chapters, manga_langs, chapter_pages, ingest_chapters)
+	UpsertChapter(ctx context.Context, id, mangaID, name string, chapterOrder int, lang, imageSrc string) error
+	GetChapterCountByLang(ctx context.Context, mangaID, lang string) (int, error)
+	GetChaptersByLang(ctx context.Context, mangaID, lang string) ([]Chapter, error)
+	GetChaptersByManga(ctx context.Context, mangaID string) ([]Chapter, error)
+	IsChapterIngested(ctx context.Context, mangaID, lang string, chapterOrder int) (bool, error)
 
 	// Dictionary
 	UpsertDictionary(ctx context.Context, entry DictionaryEntry) error
@@ -35,19 +44,14 @@ type Repository interface {
 	RemoveWatchlist(ctx context.Context, slug string) error
 	UpdateLastChecked(ctx context.Context, slug string, t time.Time) error
 
-	// Ingest chapter state
-	IsChapterDownloaded(ctx context.Context, slug, lang, num string) (bool, error)
-	MarkChapterDownloaded(ctx context.Context, slug, lang, num string, sortKey float64) error
+	// Ingest
 	GetDownloadedByLang(ctx context.Context, slug string) (map[string]int, error)
 	GetDownloadedChaptersByLang(ctx context.Context, slug, lang string) ([]string, error)
 
-	Close() error
-}
+	// Manga
+	UpdateMangaCover(ctx context.Context, slug, coverURL string) error
 
-// EventPublisher publishes domain events to the event bus.
-type EventPublisher interface {
-	PublishIngestRequested(ctx context.Context, e IngestRequested) error
-	PublishChapterDownloaded(ctx context.Context, e ChapterDownloaded) error
+	Close() error
 }
 
 // Downloader fetches remote resources over HTTP.

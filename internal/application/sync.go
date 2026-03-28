@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"mime"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"manga-engine/internal/domain"
-	"manga-engine/internal/infrastructure/storage"
 )
 
 var coverExtensions = []string{".jpg", ".jpeg", ".png", ".webp"}
@@ -40,54 +40,38 @@ func NewSyncService(repo domain.Repository, disk domain.Storer, s3c domain.Objec
 	}
 }
 
-func (s *SyncService) HandleChapterDownloaded(ctx context.Context, e domain.ChapterDownloaded) error {
+// HandleChapterUploaded handles a ChapterUploaded event.
+// In the new pipeline, chapters are already uploaded by the time this is called.
+// This method handles the manga cover update and metadata finalization.
+func (s *SyncService) HandleChapterUploaded(ctx context.Context, e domain.ChapterUploaded) error {
 	dictID := s.dictIDForSlug(e.Slug)
-	s.log.Info("chapter downloaded event",
+	s.log.Info("chapter uploaded event",
 		slog.String("dict_id", dictID),
 		slog.String("slug", e.Slug),
 		slog.String("lang", e.Language),
 		slog.String("chapter", e.ChapterNum),
-		slog.Int("pages", e.PageCount),
 	)
 
 	m, err := s.disk.ReadMetadata(e.Slug)
 	if err != nil {
 		return fmt.Errorf("read metadata: %w", err)
 	}
-	if m != nil {
-		coverURL, _ := s.uploadCover(ctx, e.Slug, dictID)
-		if err := s.repo.UpsertManga(ctx, domain.Manga{
-			Slug:        e.Slug,
-			Title:       m.Title,
-			Description: m.Description,
-			Status:      m.Status,
-			Authors:     m.Authors,
-			Genres:      m.Genres,
-			CoverURL:    coverURL,
-		}); err != nil {
-			return fmt.Errorf("upsert manga: %w", err)
-		}
-		if stat, ok := m.Languages[e.Language]; ok {
-			if err := s.repo.UpsertLang(ctx, e.Slug, e.Language, stat.Available, stat.Downloaded); err != nil {
-				s.log.Warn("upsert lang", "err", err)
-			}
+	if m == nil {
+		return nil
+	}
+
+	// Upload cover if not already
+	coverURL, _ := s.uploadCover(ctx, e.Slug, dictID)
+	if coverURL != "" {
+		if err := s.repo.UpdateMangaCover(ctx, e.Slug, coverURL); err != nil {
+			s.log.Warn("update manga cover", "slug", e.Slug, "err", err)
 		}
 	}
 
-	if err := s.repo.UpsertChapter(ctx, e.Slug, e.Language, e.ChapterNum, e.SortKey, e.PageCount); err != nil {
-		return fmt.Errorf("upsert chapter: %w", err)
-	}
-
-	return s.uploadChapter(ctx, domain.ChapterRef{
-		DictionaryID: dictID,
-		Slug:         e.Slug,
-		Language:     e.Language,
-		ChapterNum:   e.ChapterNum,
-	})
+	return nil
 }
 
-// SyncAll runs an initial full scan and then ticks at the configured interval,
-// catching any chapters that existed before the service started.
+// SyncAll runs an initial full scan and then ticks at the configured interval.
 func (s *SyncService) SyncAll(ctx context.Context) {
 	s.tick(ctx)
 	t := time.NewTicker(s.interval)
@@ -120,20 +104,6 @@ func (s *SyncService) tick(ctx context.Context) {
 		}
 	}
 
-	pending, err := s.repo.GetPendingChapters(ctx)
-	if err != nil {
-		s.log.Error("sync: get pending chapters", "err", err)
-		return
-	}
-	for _, ref := range pending {
-		if ctx.Err() != nil {
-			return
-		}
-		if err := s.uploadChapter(ctx, ref); err != nil {
-			s.log.Error("sync: upload chapter", "slug", ref.Slug, "lang", ref.Language, "chapter", ref.ChapterNum, "err", err)
-		}
-	}
-
 	s.log.Info("sync: tick complete")
 }
 
@@ -159,35 +129,6 @@ func (s *SyncService) syncSlug(ctx context.Context, slug string) error {
 		return fmt.Errorf("upsert manga: %w", err)
 	}
 
-	for lang, stat := range m.Languages {
-		if err := s.repo.UpsertLang(ctx, slug, lang, stat.Available, stat.Downloaded); err != nil {
-			s.log.Warn("sync: upsert lang", "slug", slug, "lang", lang, "err", err)
-			continue
-		}
-
-		langMeta, err := s.disk.ReadLangMetadata(slug, lang)
-		if err != nil || langMeta == nil {
-			continue
-		}
-
-		for _, chNum := range langMeta.Chapters {
-			chDir := filepath.Join(s.diskPath, slug, lang, storage.ChapterDir(chNum))
-			pageCount, err := countPageFiles(chDir)
-			if err != nil {
-				continue
-			}
-			// Skip if no local files — they were deleted after S3 upload; the
-			// existing page_count in the DB must not be zeroed out.
-			if pageCount == 0 {
-				continue
-			}
-			sortKey := domain.ParseChapterSortKey(chNum)
-			if err := s.repo.UpsertChapter(ctx, slug, lang, chNum, sortKey, pageCount); err != nil {
-				s.log.Warn("sync: upsert chapter", "slug", slug, "lang", lang, "chapter", chNum, "err", err)
-			}
-		}
-	}
-
 	dictID := s.dictIDForSlug(slug)
 	prefix := dictID
 	if prefix == "" {
@@ -208,29 +149,58 @@ func (s *SyncService) syncSlug(ctx context.Context, slug string) error {
 	return nil
 }
 
+func (s *SyncService) uploadCover(ctx context.Context, slug, dictID string) (string, error) {
+	prefix := dictID
+	if prefix == "" {
+		prefix = slug
+	}
+	for _, ext := range coverExtensions {
+		path := filepath.Join(s.diskPath, slug, "cover"+ext)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		ct := mime.TypeByExtension(ext)
+		if ct == "" {
+			ct = "image/jpeg"
+		}
+		s.log.Info("uploading cover", slog.String("dict_id", dictID), slog.String("slug", slug), slog.String("ext", ext))
+		url, err := s.s3.Upload(ctx, prefix+"/cover"+ext, data, ct)
+		if err != nil {
+			return "", err
+		}
+		s.log.Info("cover uploaded", slog.String("dict_id", dictID), slog.String("slug", slug), slog.String("url", url))
+		if removeErr := os.Remove(path); removeErr != nil {
+			s.log.Warn("sync: remove local cover", "path", path, "err", removeErr)
+		}
+		return url, nil
+	}
+	return "", nil
+}
+
+func (s *SyncService) uploadJSONFile(ctx context.Context, key, filePath string) error {
+	data, err := os.ReadFile(filePath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := s.s3.Upload(ctx, key, data, "application/json"); err != nil {
+		return err
+	}
+	if err := os.Remove(filePath); err != nil {
+		s.log.Warn("sync: remove local json", "path", filePath, "err", err)
+	}
+	return nil
+}
+
 func (s *SyncService) dictIDForSlug(slug string) string {
 	entry, found, err := s.repo.GetDictionaryBySlug(context.Background(), slug)
 	if err != nil || !found {
 		return ""
 	}
 	return entry.ID
-}
-
-func countPageFiles(dir string) (int, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	count := 0
-	for _, f := range files {
-		if !f.IsDir() && isImageFile(f.Name()) {
-			count++
-		}
-	}
-	return count, nil
 }
 
 func isImageFile(name string) bool {

@@ -90,7 +90,8 @@ func (s *WatchlistService) checkDue(ctx context.Context) {
 			continue
 		}
 		s.log.Info("watchlist daemon: triggering ingest", "slug", e.Slug)
-		if err := s.publisher.PublishIngestRequested(ctx, domain.IngestRequested{
+		if err := s.bus.Publish(ctx, s.cfg.Bus.IngestRequested, domain.IngestRequested{
+			DictionaryID: e.DictionaryID,
 			Slug:         e.Slug,
 			Sources:      sources,
 			LangToSource: langToSource,

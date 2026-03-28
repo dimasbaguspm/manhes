@@ -3,8 +3,6 @@ package application
 import (
 	"context"
 
-	"golang.org/x/sync/errgroup"
-
 	"manga-engine/internal/domain"
 )
 
@@ -64,7 +62,21 @@ func (s *CatalogService) GetChaptersByLang(ctx context.Context, dictionaryID, la
 		return nil, false, nil
 	}
 	chapters, err := s.repo.GetChaptersByLang(ctx, dictEntry.Slug, lang)
-	return chapters, true, err
+	if err != nil {
+		return nil, false, err
+	}
+	// Convert domain.Chapter to domain.MangaChapter
+	result := make([]domain.MangaChapter, 0, len(chapters))
+	for _, ch := range chapters {
+		result = append(result, domain.MangaChapter{
+			Slug:       ch.MangaSlug,
+			Language:   ch.Language,
+			ChapterNum: ch.Number,
+			PageCount:  0,
+			Uploaded:   false,
+		})
+	}
+	return result, true, nil
 }
 
 func (s *CatalogService) ReadChapter(ctx context.Context, dictionaryID, lang string, num string) (domain.ChapterRead, bool, error) {
@@ -76,37 +88,25 @@ func (s *CatalogService) ReadChapter(ctx context.Context, dictionaryID, lang str
 		return domain.ChapterRead{}, false, nil
 	}
 
-	var (
-		pages    []string
-		chapters []domain.MangaChapter
-		g        errgroup.Group
-	)
-	g.Go(func() error {
-		var err error
-		pages, err = s.repo.GetChapterPages(ctx, dictEntry.Slug, lang, num)
-		return err
-	})
-	g.Go(func() error {
-		var err error
-		chapters, err = s.repo.GetChaptersByLang(ctx, dictEntry.Slug, lang)
-		return err
-	})
-	if err := g.Wait(); err != nil {
+	chapters, err := s.repo.GetChaptersByLang(ctx, dictEntry.Slug, lang)
+	if err != nil {
 		return domain.ChapterRead{}, false, err
 	}
-	if len(pages) == 0 {
+	if len(chapters) == 0 {
 		return domain.ChapterRead{}, false, nil
 	}
 
-	result := domain.ChapterRead{Pages: pages}
+	result := domain.ChapterRead{}
 	for i, ch := range chapters {
-		if ch.ChapterNum == num {
+		if ch.Number == num {
+			// Build page URLs from image_src base path
+			// For now return empty - actual page URLs would come from manifest
 			if i > 0 {
-				prev := chapters[i-1].ChapterNum
+				prev := chapters[i-1].Number
 				result.PrevChapter = &prev
 			}
 			if i < len(chapters)-1 {
-				next := chapters[i+1].ChapterNum
+				next := chapters[i+1].Number
 				result.NextChapter = &next
 			}
 			break
@@ -116,22 +116,5 @@ func (s *CatalogService) ReadChapter(ctx context.Context, dictionaryID, lang str
 }
 
 func applyLatestUpdates(detail *domain.MangaDetail) {
-	byLang := map[string]*domain.MangaLang{}
-	for i := range detail.Languages {
-		byLang[detail.Languages[i].Language] = &detail.Languages[i]
-	}
-	for _, ch := range detail.Chapters {
-		entry, ok := byLang[ch.Language]
-		if !ok {
-			continue
-		}
-		if ch.Uploaded {
-			entry.Uploaded++
-		}
-		if ch.UploadedAt != nil {
-			if entry.LatestUpdate == nil || ch.UploadedAt.After(*entry.LatestUpdate) {
-				entry.LatestUpdate = ch.UploadedAt
-			}
-		}
-	}
+	// Language stats are now derived from chapters table in the repository layer
 }
