@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"manga-engine/config"
 	"manga-engine/internal/domain"
 	"manga-engine/pkg/httputil"
 	"manga-engine/pkg/reqctx"
@@ -12,17 +13,23 @@ import (
 type Handlers struct {
 	manga      domain.MangaQuerier
 	dictionary domain.DictionaryManager
+	bus        domain.EventBus
+	cfg        *config.Config
 	log        *slog.Logger
 }
 
 func NewHandlers(
 	manga domain.MangaQuerier,
 	dictionary domain.DictionaryManager,
+	bus domain.EventBus,
+	cfg *config.Config,
 	log *slog.Logger,
 ) *Handlers {
 	return &Handlers{
 		manga:      manga,
 		dictionary: dictionary,
+		bus:        bus,
+		cfg:        cfg,
 		log:        log,
 	}
 }

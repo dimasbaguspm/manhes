@@ -29,7 +29,7 @@ func (b *InMemBus) Subscribe(eventName string, handler Handler) {
 	b.log.Debug("subscribed handler", "event", eventName, "total_handlers", len(b.handlers[eventName]))
 }
 
-// Publish delivers the event to all registered handlers synchronously.
+// Publish delivers the event to all registered handlers asynchronously.
 func (b *InMemBus) Publish(ctx context.Context, eventName string, event Event) error {
 	b.mu.RLock()
 	handlers, ok := b.handlers[eventName]
@@ -40,9 +40,12 @@ func (b *InMemBus) Publish(ctx context.Context, eventName string, event Event) e
 	}
 
 	for _, h := range handlers {
-		if err := h(ctx, event); err != nil {
-			b.log.Warn("handler returned error", "event", eventName, "err", err)
-		}
+		go func(h Handler) {
+			// Use background context so handlers aren't cancelled when caller's context is cancelled.
+			if err := h(context.Background(), event); err != nil {
+				b.log.Warn("handler returned error", "event", eventName, "err", err)
+			}
+		}(h)
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ func NewRouter(h *Handlers, cfg *config.Config) http.Handler {
 		r.Get("/manga/{mangaId}/{lang}/read", h.ReadChapter)
 
 		r.Get("/dictionary", h.SearchDictionary)
-		r.Post("/dictionary/{dictionaryId}", h.RefreshDictionary)
+		r.Post("/dictionary/refresh", h.RefreshDictionary)
 	})
 
 	// SPA is only served in prod — in dev the Vite server handles the frontend.

@@ -65,9 +65,12 @@ const docTemplate = `{
                 }
             }
         },
-        "/dictionary/{dictionaryId}": {
+        "/dictionary/refresh": {
             "post": {
-                "description": "Re-fetches source stats from all known scrapers and searches",
+                "description": "Re-fetches source stats from all known scrapers.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -77,22 +80,21 @@ const docTemplate = `{
                 "summary": "Refresh a dictionary entry",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "Dictionary entry ID",
                         "name": "dictionaryId",
-                        "in": "path",
-                        "required": true
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/domain.DictionaryRefreshRequest"
+                        }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/domain.DictionaryResponse"
-                        }
+                    "202": {
+                        "description": "Accepted"
                     },
-                    "404": {
-                        "description": "Not Found",
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/httputil.ErrorResponse"
                         }
@@ -421,6 +423,14 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "domain.DictionaryRefreshRequest": {
+            "type": "object",
+            "properties": {
+                "dictionaryId": {
+                    "type": "string"
                 }
             }
         },

@@ -6,7 +6,9 @@ type BusConfig struct {
 	ChaptersFound     string // "chapters.found"
 	ChapterUploaded   string // "chapter.uploaded"
 	ChapterDownloaded string // "chapter.downloaded"
-	DictionaryUpdated string // "dictionary.updated"
+	DictionaryUpdated  string // "dictionary.updated"
+	MangaAvailable     string // "manga.available"
+	DictionaryRefreshed string // "dictionary.refreshed"
 }
 
 func loadBusConfig() BusConfig {
@@ -15,6 +17,8 @@ func loadBusConfig() BusConfig {
 		ChaptersFound:     "chapters.found",
 		ChapterUploaded:   "chapter.uploaded",
 		ChapterDownloaded: "chapter.downloaded",
-		DictionaryUpdated: "dictionary.updated",
+		DictionaryUpdated:   "dictionary.updated",
+		MangaAvailable:      "manga.available",
+		DictionaryRefreshed: "dictionary.refreshed",
 	}
 }

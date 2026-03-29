@@ -46,6 +46,11 @@ definitions:
       total:
         type: integer
     type: object
+  domain.DictionaryRefreshRequest:
+    properties:
+      dictionaryId:
+        type: string
+    type: object
   domain.DictionaryResponse:
     properties:
       best_source:
@@ -225,24 +230,25 @@ paths:
       summary: Search all scrapers and auto-upsert results into dictionary
       tags:
       - dictionary
-  /dictionary/{dictionaryId}:
+  /dictionary/refresh:
     post:
-      description: Re-fetches source stats from all known scrapers and searches
+      consumes:
+      - application/json
+      description: Re-fetches source stats from all known scrapers.
       parameters:
       - description: Dictionary entry ID
-        in: path
+        in: body
         name: dictionaryId
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/domain.DictionaryRefreshRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/domain.DictionaryResponse'
-        "404":
-          description: Not Found
+        "202":
+          description: Accepted
+        "400":
+          description: Bad Request
           schema:
             $ref: '#/definitions/httputil.ErrorResponse'
         "500":

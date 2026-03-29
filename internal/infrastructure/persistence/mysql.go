@@ -123,99 +123,113 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 		dictIDVal = filter.IDs[0]
 	}
 
-	rows, err := r.q.ListManga(ctx, queries.ListMangaParams{
-		Column1:      nil,
-		DictionaryID: dictIDVal,
-		Column3:      filter.Q,
-		CONCAT:       filter.Q,
-		CONCAT_2:     filter.Q,
-		Column6:      nil,
-		State:        stateVal,
-		Column8:      sortBy,
-		Column9:      sortOrder,
-		Column10:     sortBy,
-		Column11:     sortOrder,
-		Column12:     sortBy,
-		Column13:     sortOrder,
-		Column14:     sortBy,
-		Column15:     sortOrder,
-		Column16:     sortBy,
-		Column17:     sortOrder,
-		Column18:     sortBy,
-		Column19:     sortOrder,
-		Limit:        int32(pageSize),
-		Offset:       int32(offset),
-	})
+	// Build sort column expression to avoid SQL injection and keep it clean.
+	orderCol := "m.title"
+	orderDir := "ASC"
+	switch sortBy {
+	case "updatedAt":
+		orderCol = "m.updated_at"
+	case "createdAt":
+		orderCol = "m.created_at"
+	case "title":
+		orderCol = "m.title"
+	}
+	if sortOrder == "desc" {
+		orderDir = "DESC"
+	}
+
+	// Build filter args and WHERE clause dynamically.
+	var args []interface{}
+	where := "WHERE 1=1"
+
+	if dictIDVal != "" {
+		where += " AND m.dictionary_id = ?"
+		args = append(args, dictIDVal)
+	}
+	if filter.Q != "" {
+		where += " AND (m.title LIKE ? OR m.description LIKE ?)"
+		likeQ := "%" + filter.Q + "%"
+		args = append(args, likeQ, likeQ)
+	}
+	if stateVal != "" {
+		where += " AND m.state = ?"
+		args = append(args, stateVal)
+	}
+
+	// CTE for total count, then paginated results.
+	query := fmt.Sprintf(`
+		WITH total_cte AS (
+			SELECT COUNT(*) AS total FROM manga m %s
+		)
+		SELECT m.id, m.dictionary_id, m.title, m.description, m.status, m.authors, m.genres,
+		       m.cover_url, m.state, m.chapters_by_lang, m.updated_at, m.created_at,
+		       (SELECT total FROM total_cte) AS total
+		FROM manga m
+		%s
+		ORDER BY %s %s
+		LIMIT ? OFFSET ?
+	`, where, where, orderCol, orderDir)
+
+	args = append(args, pageSize, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return domain.MangaPage{}, err
 	}
-	if len(rows) == 0 {
-		return domain.MangaPage{Items: []domain.Manga{}, Total: 0, Page: page, PageSize: pageSize}, nil
-	}
+	defer rows.Close()
 
-	items := make([]domain.Manga, 0, len(rows))
-	for _, row := range rows {
-		var authors, genres []string
-		json.Unmarshal(row.Authors, &authors)
-		json.Unmarshal(row.Genres, &genres)
-		var chaptersByLang map[string]domain.ChapterStats
-		json.Unmarshal(row.ChaptersByLang, &chaptersByLang)
-		if chaptersByLang == nil {
-			chaptersByLang = map[string]domain.ChapterStats{}
+	items := make([]domain.Manga, 0)
+	var total int
+	for rows.Next() {
+		var id, dictionaryID, title, description, status, coverURL, state string
+		var authors, genres, chaptersByLang []byte
+		var updatedAt, createdAt sql.NullTime
+		var rowTotal int
+
+		if err := rows.Scan(&id, &dictionaryID, &title, &description, &status,
+			&authors, &genres, &coverURL, &state, &chaptersByLang,
+			&updatedAt, &createdAt, &rowTotal); err != nil {
+			return domain.MangaPage{}, err
 		}
 
-		var updatedAt *time.Time
-		if row.UpdatedAt.Valid {
-			t := row.UpdatedAt.Time
-			updatedAt = &t
+		var authorList, genreList []string
+		json.Unmarshal(authors, &authorList)
+		json.Unmarshal(genres, &genreList)
+		var cbl map[string]domain.ChapterStats
+		json.Unmarshal(chaptersByLang, &cbl)
+		if cbl == nil {
+			cbl = map[string]domain.ChapterStats{}
 		}
-		var createdAt time.Time
-		if row.CreatedAt.Valid {
-			createdAt = row.CreatedAt.Time
+
+		var ua *time.Time
+		if updatedAt.Valid {
+			ua = &updatedAt.Time
 		}
+		ca := createdAt.Time
 
 		items = append(items, domain.Manga{
-			ID:             row.ID,
-			DictionaryID:   row.DictionaryID,
-			Title:          row.Title,
-			Description:    row.Description,
-			Status:         row.Status,
-			CoverURL:       row.CoverUrl,
-			Authors:        authors,
-			Genres:         genres,
-			State:          domain.MangaState(row.State),
-			ChaptersByLang: chaptersByLang,
-			UpdatedAt:      updatedAt,
-			CreatedAt:      createdAt,
+			ID:             id,
+			DictionaryID:   dictionaryID,
+			Title:          title,
+			Description:    description,
+			Status:         status,
+			CoverURL:       coverURL,
+			Authors:        authorList,
+			Genres:         genreList,
+			State:          domain.MangaState(state),
+			ChaptersByLang: cbl,
+			UpdatedAt:      ua,
+			CreatedAt:      ca,
 		})
+		total = rowTotal
+	}
+	if err := rows.Err(); err != nil {
+		return domain.MangaPage{}, err
 	}
 
-	// Apply array filters in-memory
-	if len(filter.Genres) > 0 || len(filter.Authors) > 0 || len(filter.States) > 1 {
+	// Apply multi-value filters in-memory.
+	if len(filter.IDs) > 1 || len(filter.Genres) > 0 || len(filter.Authors) > 0 || len(filter.States) > 1 {
 		items = applyMangaFilters(items, filter)
-	}
-	if len(filter.IDs) > 1 {
-		idSet := map[string]bool{}
-		for _, id := range filter.IDs {
-			idSet[id] = true
-		}
-		filtered := make([]domain.Manga, 0, len(items))
-		for _, m := range items {
-			if idSet[m.DictionaryID] {
-				filtered = append(filtered, m)
-			}
-		}
-		items = filtered
-	}
-
-	var total int
-	if rows[0].Total != nil {
-		switch v := rows[0].Total.(type) {
-		case int64:
-			total = int(v)
-		case int:
-			total = v
-		}
 	}
 
 	return domain.MangaPage{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
@@ -503,6 +517,18 @@ func (r *MySQLRepository) IsChapterIngested(ctx context.Context, mangaID, lang s
 		ChapterOrder: int32(chapterOrder),
 	})
 	return n > 0, err
+}
+
+func (r *MySQLRepository) GetChapterUploaded(ctx context.Context, mangaID, lang, chapterNum string) (bool, error) {
+	imageSrc, err := r.q.GetChapterUploaded(ctx, queries.GetChapterUploadedParams{
+		MangaID: mangaID,
+		Lang:    lang,
+		Name:    chapterNum,
+	})
+	if err != nil {
+		return false, err
+	}
+	return imageSrc != "", nil
 }
 
 // Dictionary methods

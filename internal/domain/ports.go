@@ -30,6 +30,7 @@ type Repository interface {
 	GetChaptersByLang(ctx context.Context, mangaID, lang string) ([]Chapter, error)
 	GetChaptersByManga(ctx context.Context, mangaID string) ([]Chapter, error)
 	IsChapterIngested(ctx context.Context, mangaID, lang string, chapterOrder int) (bool, error)
+	GetChapterUploaded(ctx context.Context, mangaID, lang, chapterNum string) (bool, error)
 
 	// Dictionary
 	UpsertDictionary(ctx context.Context, entry DictionaryEntry) error

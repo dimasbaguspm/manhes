@@ -40,6 +40,13 @@ type ChapterUploaded struct {
 	S3URLs       []string `json:"s3_urls"`
 }
 
+// MangaAvailable is published after all chapters for a manga have been uploaded.
+// The subscriber updates the manga's state to available and refreshes chapter stats.
+type MangaAvailable struct {
+	DictionaryID string `json:"dictionary_id"`
+	MangaID      string `json:"manga_id"`
+}
+
 // DictionaryUpdated is published after a dictionary entry is refreshed and
 // its cross-source data (Sources, BestSource, SourceStats) may have changed.
 // When TriggerIngest is true, the subscriber should also publish ingest.requested
@@ -47,4 +54,10 @@ type ChapterUploaded struct {
 type DictionaryUpdated struct {
 	DictionaryID  string `json:"dictionary_id"`
 	TriggerIngest bool   `json:"trigger_inggest"` // true when fired from Refresh
+}
+
+// DictionaryRefreshed is published when a dictionary refresh is requested via HTTP.
+// The subscriber calls DictionaryService.Refresh in the background.
+type DictionaryRefreshed struct {
+	DictionaryID string `json:"dictionary_id"`
 }

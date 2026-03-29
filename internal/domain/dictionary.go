@@ -58,6 +58,11 @@ type DictionaryManager interface {
 	Refresh(ctx context.Context, id string) (DictionaryEntry, error)
 }
 
+// DictionaryRefreshRequest is the JSON body for the /dictionary/refresh endpoint.
+type DictionaryRefreshRequest struct {
+	DictionaryID string `json:"dictionaryId"`
+}
+
 // DictionaryResponse is the API representation of a dictionary entry.
 type DictionaryResponse struct {
 	ID             string                `json:"id"`

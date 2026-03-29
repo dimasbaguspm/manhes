@@ -7,7 +7,28 @@ package queries
 
 import (
 	"context"
+	"database/sql"
 )
+
+const getChapterUploaded = `-- name: GetChapterUploaded :one
+SELECT image_src FROM chapters WHERE manga_id = ? AND lang = ? AND name = ? AND image_src IS NOT NULL AND image_src != '' LIMIT 1
+`
+
+type GetChapterUploadedParams struct {
+	MangaID string
+	Lang    string
+	Name    string
+}
+
+func (q *Queries) GetChapterUploaded(ctx context.Context, arg GetChapterUploadedParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getChapterUploaded, arg.MangaID, arg.Lang, arg.Name)
+	var imageSrc sql.NullString
+	err := row.Scan(&imageSrc)
+	if err == sql.ErrNoRows || !imageSrc.Valid || imageSrc.String == "" {
+		return "", nil
+	}
+	return imageSrc.String, err
+}
 
 const getChapterCountByLang = `-- name: GetChapterCountByLang :one
 SELECT COUNT(*) FROM chapters WHERE manga_id = ? AND lang = ?

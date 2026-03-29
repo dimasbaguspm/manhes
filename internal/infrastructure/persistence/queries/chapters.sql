@@ -1,5 +1,9 @@
 -- chapters.sql: unified chapters table
 
+-- name: GetChapterUploaded :one
+-- Returns the image_src if the chapter has been uploaded (image_src IS NOT NULL AND image_src != ''), empty string otherwise.
+SELECT image_src FROM chapters WHERE manga_id = ? AND lang = ? AND name = ? AND image_src IS NOT NULL AND image_src != '' LIMIT 1;
+
 -- name: UpsertChapter :exec
 INSERT INTO chapters (id, manga_id, name, chapter_order, lang, image_src)
 VALUES (?, ?, ?, ?, ?, ?)

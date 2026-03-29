@@ -115,6 +115,13 @@ func (s *DictionaryService) Search(ctx context.Context, query string) ([]domain.
 	if err := s.repo.UpsertDictionaryBatch(ctx, entries); err != nil {
 		return nil, err
 	}
+	s.log.Info("[DictionaryService] Search: batch upserted", "count", len(entries), "ids", func() []string {
+		ids := make([]string, len(entries))
+		for i, e := range entries {
+			ids[i] = e.ID
+		}
+		return ids
+	}())
 
 	// Publish dictionary.updated for each upserted entry so MangaService can sync metadata.
 	// TriggerIngest=false because Search does not trigger chapter ingestion.
@@ -134,11 +141,15 @@ func (s *DictionaryService) Search(ctx context.Context, query string) ([]domain.
 // scrapers for any new sources matching the entry's title. It then persists the
 // merged result and returns the updated entry.
 func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.DictionaryEntry, error) {
+	s.log.Info("[DictionaryService] Refresh: started", "dictionaryID", id)
+
 	entry, found, err := s.repo.GetDictionary(ctx, id)
 	if err != nil {
+		s.log.Error("[DictionaryService] Refresh: GetDictionary failed", "dictionaryID", id, "err", err)
 		return domain.DictionaryEntry{}, err
 	}
 	if !found {
+		s.log.Warn("[DictionaryService] Refresh: entry not found", "dictionaryID", id)
 		return domain.DictionaryEntry{}, domain.ErrNotFound
 	}
 
@@ -210,8 +221,28 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 		DictionaryID:  updated.ID,
 		TriggerIngest: true, // Refresh always triggers ingestion so new chapters get synced
 	}); err != nil {
-		s.log.Warn("dictionary refresh: publish dictionary.updated", "id", id, "err", err)
+		s.log.Warn("[DictionaryService] Refresh: publish DictionaryUpdated failed", "dictionaryID", id, "err", err)
 	}
 
+	s.log.Info("[DictionaryService] Refresh: completed", "dictionaryID", id)
 	return updated, nil
+}
+
+// HandleDictionaryRefreshed processes a DictionaryRefreshed event by calling Refresh.
+func (s *DictionaryService) HandleDictionaryRefreshed(ctx context.Context, e domain.DictionaryRefreshed) error {
+	s.log.Info("[DictionaryService] HandleDictionaryRefreshed: received event",
+		"dictionaryID", e.DictionaryID,
+	)
+	_, err := s.Refresh(ctx, e.DictionaryID)
+	if err != nil {
+		s.log.Error("[DictionaryService] HandleDictionaryRefreshed: Refresh failed",
+			"dictionaryID", e.DictionaryID,
+			"err", err,
+		)
+		return err
+	}
+	s.log.Info("[DictionaryService] HandleDictionaryRefreshed: completed",
+		"dictionaryID", e.DictionaryID,
+	)
+	return nil
 }

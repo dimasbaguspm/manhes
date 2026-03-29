@@ -1,10 +1,8 @@
 package handler
 
 import (
-	"errors"
+	"encoding/json"
 	"net/http"
-
-	"github.com/go-chi/chi/v5"
 
 	"manga-engine/internal/domain"
 	"manga-engine/pkg/httputil"
@@ -39,33 +37,36 @@ func dictToResponse(e domain.DictionaryEntry) domain.DictionaryResponse {
 	return r
 }
 
-// RefreshDictionary handles POST /api/v1/dictionary/{dictionaryId}
+// RefreshDictionary handles POST /api/v1/dictionary/refresh
 //
 // @Summary     Refresh a dictionary entry
-// @Description Re-fetches source stats from all known scrapers and searches
+// @Description Re-fetches source stats from all known scrapers.
 //
-//	3rd-party sources for any new entries matching the title.
-//	Safe to call repeatedly — already-known sources are preserved.
+//	The actual refresh runs in the background; this endpoint returns 202 immediately.
 //
 // @Tags        dictionary
+// @Accept      json
 // @Produce     json
-// @Param       dictionaryId  path  string  true  "Dictionary entry ID"
-// @Success     200  {object}  domain.DictionaryResponse
-// @Failure     404  {object}  httputil.ErrorResponse
+// @Param       dictionaryId  body  domain.DictionaryRefreshRequest  true  "Dictionary entry ID"
+// @Success     202
+// @Failure     400  {object}  httputil.ErrorResponse
 // @Failure     500  {object}  httputil.ErrorResponse
-// @Router      /dictionary/{dictionaryId} [post]
+// @Router      /dictionary/refresh [post]
 func (h *Handlers) RefreshDictionary(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "dictionaryId")
-	entry, err := h.dictionary.Refresh(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			httputil.NotFound(w, "dictionary entry not found", nil)
-			return
-		}
+	var req domain.DictionaryRefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DictionaryID == "" {
+		httputil.BadRequest(w, "dictionaryId is required", nil)
+		return
+	}
+
+	if err := h.bus.Publish(r.Context(), h.cfg.Bus.DictionaryRefreshed, domain.DictionaryRefreshed{
+		DictionaryID: req.DictionaryID,
+	}); err != nil {
 		h.internalError(w, r, "refresh dictionary", err)
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, dictToResponse(entry))
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // SearchDictionary handles GET /api/v1/dictionary?q=...

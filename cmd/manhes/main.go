@@ -93,12 +93,13 @@ func run(cfg *config.Config, log *slog.Logger) error {
 		Cfg:      cfg,
 	})
 	fileUploadSvc := application.NewFileUploadService(application.FileUploadServiceConfig{
-		Repo: repo,
-		Disk: disk,
-		S3:   s3c,
-		DL:   dl,
-		Bus:  bus,
-		Cfg:  cfg,
+		Repo:     repo,
+		Registry: reg,
+		Disk:     disk,
+		S3:       s3c,
+		DL:       dl,
+		Bus:      bus,
+		Cfg:      cfg,
 	})
 	ingestDaemon := application.NewIngestDaemon(application.IngestDaemonConfig{
 		Repo:     repo,
@@ -111,18 +112,27 @@ func run(cfg *config.Config, log *slog.Logger) error {
 	bus.Subscribe(cfg.Bus.DictionaryUpdated, func(ctx context.Context, e domain.Event) error {
 		return mangaSvc.HandleDictionaryUpdated(ctx, e.(domain.DictionaryUpdated))
 	})
+	bus.Subscribe(cfg.Bus.DictionaryRefreshed, func(ctx context.Context, e domain.Event) error {
+		return dictSvc.HandleDictionaryRefreshed(ctx, e.(domain.DictionaryRefreshed))
+	})
 	bus.Subscribe(cfg.Bus.IngestRequested, func(ctx context.Context, e domain.Event) error {
 		return retrievalHandler.HandleIngestRequested(ctx, e.(domain.IngestRequested))
 	})
 	bus.Subscribe(cfg.Bus.ChaptersFound, func(ctx context.Context, e domain.Event) error {
 		return fileUploadSvc.HandleChaptersFound(ctx, e.(domain.ChaptersFound))
 	})
+	bus.Subscribe(cfg.Bus.ChapterUploaded, func(ctx context.Context, e domain.Event) error {
+		return mangaSvc.HandleChapterUploaded(ctx, e.(domain.ChapterUploaded))
+	})
+	bus.Subscribe(cfg.Bus.MangaAvailable, func(ctx context.Context, e domain.Event) error {
+		return mangaSvc.HandleMangaAvailable(ctx, e.(domain.MangaAvailable))
+	})
 
 	go ingestDaemon.Run(ctx)
 	log.Info("[Ingest] daemon started", "interval", cfg.DictionaryRefreshInterval)
 
 	log.Info("[Core] server up", "addr", cfg.ListenAddr)
-	h := handler.NewHandlers(mangaSvc, dictSvc, log)
+	h := handler.NewHandlers(mangaSvc, dictSvc, bus, cfg, log)
 	return handler.NewServer(cfg.ListenAddr, handler.NewRouter(h, cfg), log).Run(ctx)
 }
 
