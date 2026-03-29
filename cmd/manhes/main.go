@@ -15,7 +15,6 @@ import (
 	_ "manga-engine/docs/manhes"
 
 	"manga-engine/config"
-	"manga-engine/internal/handler"
 	"manga-engine/pkg/lifecycle"
 	pkglog "manga-engine/pkg/log"
 )
@@ -44,9 +43,7 @@ func main() {
 	w.StartSubscriptions()
 	w.StartDaemons(ctx)
 
-	log.Info("[Core] server up", "addr", cfg.ListenAddr)
-	h := handler.NewHandlers(w.MangaSvc, w.DictSvc, infra.Bus, cfg, log)
-	if err := handler.NewServer(cfg.ListenAddr, handler.NewRouter(h, cfg), log).Run(ctx); err != nil {
+	if err := w.StartServer(ctx); err != nil {
 		log.Error("[Core] server stopped", "err", err)
 		os.Exit(1)
 	}

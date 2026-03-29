@@ -10,20 +10,20 @@ import (
 
 // DictionarySubscriberConfig holds dependencies for DictionarySubscriber.
 type DictionarySubscriberConfig struct {
-	DictionaryManager domain.DictionaryManager
+	DictionaryHandler domain.DictionaryHandler
 	Cfg              *config.Config
 }
 
 // DictionarySubscriber handles dictionary-related events.
 type DictionarySubscriber struct {
-	dict domain.DictionaryManager
+	dict domain.DictionaryHandler
 	cfg  *config.Config
 	log  *slog.Logger
 }
 
 func NewDictionarySubscriber(cfg DictionarySubscriberConfig) *DictionarySubscriber {
 	return &DictionarySubscriber{
-		dict: cfg.DictionaryManager,
+		dict: cfg.DictionaryHandler,
 		cfg:  cfg.Cfg,
 		log:  slog.With("component", "subscriber"),
 	}

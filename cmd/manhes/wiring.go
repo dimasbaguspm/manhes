@@ -2,15 +2,21 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"manga-engine/config"
-	"manga-engine/internal/application"
 	"manga-engine/internal/daemon"
 	"manga-engine/internal/domain"
+	"manga-engine/internal/handler"
 	"manga-engine/internal/infrastructure/downloader"
 	"manga-engine/internal/infrastructure/eventbus"
+	infrahttp "manga-engine/internal/infrastructure/http"
 	"manga-engine/internal/infrastructure/persistence"
 	"manga-engine/internal/infrastructure/s3"
 	"manga-engine/internal/infrastructure/scraper"
@@ -34,8 +40,8 @@ type Infra struct {
 type Wiring struct {
 	Infra Infra
 
-	DictSvc       *application.DictionaryService
-	MangaSvc      *application.MangaService
+	*handler.Handlers
+
 	RetrievalSub  *subscriber.RetrievalSubscriber
 	MangaSub      *subscriber.MangaSubscriber
 	DictionarySub *subscriber.DictionarySubscriber
@@ -44,18 +50,14 @@ type Wiring struct {
 }
 
 func New(infra Infra) *Wiring {
-	dictSvc := application.NewDictionaryService(application.DictionaryServiceConfig{
-		Repo:     infra.Repo,
-		Registry: infra.Reg,
-		DL:       infra.DL,
-		S3:       infra.S3,
-		Bus:      infra.Bus,
-		Cfg:      infra.Cfg,
-	})
-
-	mangaSvc := application.NewMangaService(application.MangaServiceConfig{
-		Repo: infra.Repo,
-		Cfg:  infra.Cfg,
+	h := handler.NewHandlers(handler.HandlersConfig{
+		Repo:       infra.Repo,
+		Registry:   infra.Reg,
+		Downloader: infra.DL,
+		S3:         infra.S3,
+		Bus:        infra.Bus,
+		Cfg:        infra.Cfg,
+		Log:        infra.Log,
 	})
 
 	retrievalSub := subscriber.NewRetrievalSubscriber(subscriber.RetrievalSubscriberConfig{
@@ -73,7 +75,7 @@ func New(infra Infra) *Wiring {
 	})
 
 	dictionarySub := subscriber.NewDictionarySubscriber(subscriber.DictionarySubscriberConfig{
-		DictionaryManager: dictSvc,
+		DictionaryHandler: h,
 		Cfg:               infra.Cfg,
 	})
 
@@ -89,14 +91,13 @@ func New(infra Infra) *Wiring {
 
 	ingestDaemon := daemon.NewIngestDaemon(daemon.IngestConfig{
 		Repo:    infra.Repo,
-		DictSvc: dictSvc,
+		DictSvc: h, // *Handlers implements DictionaryManager
 		Cfg:     infra.Cfg,
 	})
 
 	return &Wiring{
 		Infra:         infra,
-		DictSvc:       dictSvc,
-		MangaSvc:      mangaSvc,
+		Handlers:      h,
 		RetrievalSub:  retrievalSub,
 		MangaSub:      mangaSub,
 		DictionarySub: dictionarySub,
@@ -138,6 +139,57 @@ func (w *Wiring) StartDaemons(ctx context.Context) {
 	log.Info("[Wiring] starting daemons")
 	go w.IngestDaemon.Run(ctx)
 	log.Info("[Wiring] daemons started")
+}
+
+func (w *Wiring) RegisterRoutes() {
+	w.Infra.Log.Info("[Wiring] registering HTTP routes")
+}
+
+func (w *Wiring) StartServer(ctx context.Context) error {
+	log := w.Infra.Log
+
+	router := infrahttp.NewMux()
+	router.Use(infrahttp.Cors)
+	router.Use(infrahttp.RequestID)
+	router.Use(infrahttp.StructuredLogger(w.Handlers.Log))
+	router.Use(middleware.Recoverer)
+
+	h := &httpHandlers{Handlers: w.Handlers}
+
+	router.Route("/api/v1", func(r chi.Router) {
+		r.Get("/manga", h.listManga)
+		r.Get("/manga/{mangaId}", h.getManga)
+		r.Get("/manga/{mangaId}/{lang}", h.getChapters)
+		r.Get("/read/{chapterId}", h.readChapter)
+		r.Get("/dictionary", h.searchDictionary)
+		r.Post("/dictionary/refresh", h.refreshDictionary)
+	})
+
+	srv := &http.Server{
+		Addr:         w.Infra.Cfg.ListenAddr,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		log.Info("server started", "addr", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		log.Info("shutting down")
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutCtx)
+	}
 }
 
 func BuildScraperRegistry(cfg *config.Config) *scraper.Registry {

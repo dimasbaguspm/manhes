@@ -14,7 +14,7 @@ import (
 // IngestConfig holds dependencies for the ingest daemon.
 type IngestConfig struct {
 	Repo    domain.Repository
-	DictSvc domain.DictionaryManager
+	DictSvc domain.DictionaryHandler
 	Cfg     *config.Config
 }
 
@@ -22,7 +22,7 @@ type IngestConfig struct {
 // orphaned manga directories on disk.
 type IngestDaemon struct {
 	repo     domain.Repository
-	dictSvc  domain.DictionaryManager
+	dict     domain.DictionaryHandler
 	diskPath string
 	interval time.Duration
 	log      *slog.Logger
@@ -32,7 +32,7 @@ type IngestDaemon struct {
 func NewIngestDaemon(cfg IngestConfig) *IngestDaemon {
 	return &IngestDaemon{
 		repo:     cfg.Repo,
-		dictSvc:  cfg.DictSvc,
+		dict:     cfg.DictSvc,
 		diskPath: cfg.Cfg.LibraryPath,
 		interval: cfg.Cfg.DictionaryRefreshInterval,
 		log:      slog.With("daemon", "ingest"),
@@ -66,7 +66,7 @@ func (d *IngestDaemon) refreshMangaEntries(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if _, err := d.dictSvc.Refresh(ctx, m.DictionaryID); err != nil {
+		if _, err := d.dict.Refresh(ctx, m.DictionaryID); err != nil {
 			d.log.Warn("ingest daemon: refresh", "dictionaryID", m.DictionaryID, "err", err)
 		}
 	}

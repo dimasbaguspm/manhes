@@ -1,4 +1,4 @@
-package handler
+package http
 
 import (
 	"log/slog"
@@ -12,9 +12,9 @@ import (
 
 const requestIDHeader = "X-Request-ID"
 
-// requestID attaches a request ID to the context and echoes it in the response header.
+// RequestID attaches a request ID to the context and echoes it in the response header.
 // It honours an incoming X-Request-ID header; if absent a new UUID is generated.
-func requestID(next http.Handler) http.Handler {
+func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get(requestIDHeader)
 		if id == "" {
@@ -25,8 +25,8 @@ func requestID(next http.Handler) http.Handler {
 	})
 }
 
-// structuredLogger logs each HTTP request/response pair using slog.
-func structuredLogger(log *slog.Logger) func(http.Handler) http.Handler {
+// StructuredLogger logs each HTTP request/response pair using slog.
+func StructuredLogger(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ww := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -57,8 +57,8 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
-// cors adds permissive CORS headers for local/personal use.
-func cors(next http.Handler) http.Handler {
+// Cors adds permissive CORS headers for local/personal use.
+func Cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

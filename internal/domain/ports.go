@@ -70,9 +70,3 @@ type Storer interface {
 	WriteChapterManifest(slug, lang string, ch *Chapter) error
 }
 
-// MangaSubscriber handles manga-related events.
-type MangaSubscriber interface {
-	HandleDictionaryUpdated(ctx context.Context, e DictionaryUpdated) error
-	HandleChapterUploaded(ctx context.Context, e ChapterUploaded) error
-	HandleMangaAvailable(ctx context.Context, e MangaAvailable) error
-}
