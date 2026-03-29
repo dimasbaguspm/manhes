@@ -111,7 +111,7 @@ func (w *Wiring) StartSubscriptions() {
 	bus := w.Infra.Bus
 	cfg := w.Infra.Cfg
 
-	log.Info("[Wiring] registering event subscriptions")
+	log.Info("[Core] registering event subscriptions")
 	bus.Subscribe(cfg.Bus.DictionaryUpdated, func(ctx context.Context, e domain.Event) error {
 		return w.MangaSub.HandleDictionaryUpdated(ctx, e.(domain.DictionaryUpdated))
 	})
@@ -130,19 +130,19 @@ func (w *Wiring) StartSubscriptions() {
 	bus.Subscribe(cfg.Bus.MangaAvailable, func(ctx context.Context, e domain.Event) error {
 		return w.MangaSub.HandleMangaAvailable(ctx, e.(domain.MangaAvailable))
 	})
-	log.Info("[Wiring] event subscriptions registered")
+	log.Info("[Core] event subscriptions registered")
 }
 
 func (w *Wiring) StartDaemons(ctx context.Context) {
 	log := w.Infra.Log
 
-	log.Info("[Wiring] starting daemons")
+	log.Info("[Core] starting daemons")
 	go w.IngestDaemon.Run(ctx)
-	log.Info("[Wiring] daemons started")
+	log.Info("[Core] daemons started")
 }
 
 func (w *Wiring) RegisterRoutes() {
-	w.Infra.Log.Info("[Wiring] registering HTTP routes")
+	w.Infra.Log.Info("[Core] registering HTTP routes")
 }
 
 func (w *Wiring) StartServer(ctx context.Context) error {
@@ -175,7 +175,7 @@ func (w *Wiring) StartServer(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("server started", "addr", srv.Addr)
+		log.Info("[Core] server started", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
