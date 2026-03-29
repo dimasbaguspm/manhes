@@ -72,22 +72,20 @@ type MySQLRepository struct {
 func (r *MySQLRepository) UpsertManga(ctx context.Context, m domain.Manga) error {
 	authors, _ := json.Marshal(m.Authors)
 	genres, _ := json.Marshal(m.Genres)
-	chaptersByLang, _ := json.Marshal(m.ChaptersByLang)
 	state := string(m.State)
 	if state == "" {
 		state = string(domain.StateUnavailable)
 	}
 	return r.q.UpsertManga(ctx, queries.UpsertMangaParams{
-		ID:             m.ID,
-		DictionaryID:   m.DictionaryID,
-		Title:          m.Title,
-		Description:    m.Description,
-		Status:         m.Status,
-		Authors:        authors,
-		Genres:         genres,
-		CoverUrl:       m.CoverURL,
-		State:          state,
-		ChaptersByLang: chaptersByLang,
+		ID:           m.ID,
+		DictionaryID: m.DictionaryID,
+		Title:        m.Title,
+		Description:  m.Description,
+		Status:       m.Status,
+		Authors:      authors,
+		Genres:       genres,
+		CoverUrl:     m.CoverURL,
+		State:        state,
 	})
 }
 
@@ -162,7 +160,7 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 			SELECT COUNT(*) AS total FROM manga m %s
 		)
 		SELECT m.id, m.dictionary_id, m.title, m.description, m.status, m.authors, m.genres,
-		       m.cover_url, m.state, m.chapters_by_lang, m.updated_at, m.created_at,
+		       m.cover_url, m.state, m.updated_at, m.created_at,
 		       (SELECT total FROM total_cte) AS total
 		FROM manga m
 		%s
@@ -182,12 +180,12 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 	var total int
 	for rows.Next() {
 		var id, dictionaryID, title, description, status, coverURL, state string
-		var authors, genres, chaptersByLang []byte
-		var updatedAt, createdAt sql.NullTime
+		var authors, genres []byte
+		var updatedAt, createdAt time.Time
 		var rowTotal int
 
 		if err := rows.Scan(&id, &dictionaryID, &title, &description, &status,
-			&authors, &genres, &coverURL, &state, &chaptersByLang,
+			&authors, &genres, &coverURL, &state,
 			&updatedAt, &createdAt, &rowTotal); err != nil {
 			return domain.MangaPage{}, err
 		}
@@ -195,31 +193,21 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 		var authorList, genreList []string
 		json.Unmarshal(authors, &authorList)
 		json.Unmarshal(genres, &genreList)
-		var cbl map[string]domain.ChapterStats
-		json.Unmarshal(chaptersByLang, &cbl)
-		if cbl == nil {
-			cbl = map[string]domain.ChapterStats{}
-		}
 
-		var ua *time.Time
-		if updatedAt.Valid {
-			ua = &updatedAt.Time
-		}
-		ca := createdAt.Time
+		ua := &updatedAt
 
 		items = append(items, domain.Manga{
-			ID:             id,
-			DictionaryID:   dictionaryID,
-			Title:          title,
-			Description:    description,
-			Status:         status,
-			CoverURL:       coverURL,
-			Authors:        authorList,
-			Genres:         genreList,
-			State:          domain.MangaState(state),
-			ChaptersByLang: cbl,
-			UpdatedAt:      ua,
-			CreatedAt:      ca,
+			ID:           id,
+			DictionaryID: dictionaryID,
+			Title:        title,
+			Description:  description,
+			Status:       status,
+			CoverURL:     coverURL,
+			Authors:      authorList,
+			Genres:       genreList,
+			State:        domain.MangaState(state),
+			UpdatedAt:    ua,
+			CreatedAt:    createdAt,
 		})
 		total = rowTotal
 	}
@@ -295,36 +283,22 @@ func (r *MySQLRepository) GetMangaByDictionaryID(ctx context.Context, dictionary
 	var authors, genres []string
 	json.Unmarshal(row.Authors, &authors)
 	json.Unmarshal(row.Genres, &genres)
-	var chaptersByLang map[string]domain.ChapterStats
-	json.Unmarshal(row.ChaptersByLang, &chaptersByLang)
-	if chaptersByLang == nil {
-		chaptersByLang = map[string]domain.ChapterStats{}
-	}
 
-	var updatedAt *time.Time
-	if row.UpdatedAt.Valid {
-		t := row.UpdatedAt.Time
-		updatedAt = &t
-	}
-	var createdAt time.Time
-	if row.CreatedAt.Valid {
-		createdAt = row.CreatedAt.Time
-	}
+	updatedAt := row.UpdatedAt
 
 	d := domain.MangaDetail{
 		Manga: domain.Manga{
-			ID:             row.ID,
-			DictionaryID:   row.DictionaryID,
-			Title:          row.Title,
-			Description:    row.Description,
-			Status:         row.Status,
-			CoverURL:       row.CoverUrl,
-			Authors:        authors,
-			Genres:         genres,
-			State:          domain.MangaState(row.State),
-			ChaptersByLang: chaptersByLang,
-			UpdatedAt:      updatedAt,
-			CreatedAt:      createdAt,
+			ID:           row.ID,
+			DictionaryID: row.DictionaryID,
+			Title:        row.Title,
+			Description:  row.Description,
+			Status:       row.Status,
+			CoverURL:     row.CoverUrl,
+			Authors:      authors,
+			Genres:       genres,
+			State:        domain.MangaState(row.State),
+			UpdatedAt:    &updatedAt,
+			CreatedAt:    row.CreatedAt,
 		},
 	}
 	return r.fillMangaDetail(ctx, d)
@@ -342,69 +316,113 @@ func (r *MySQLRepository) GetMangaByID(ctx context.Context, id string) (domain.M
 	var authors, genres []string
 	json.Unmarshal(row.Authors, &authors)
 	json.Unmarshal(row.Genres, &genres)
-	var chaptersByLang map[string]domain.ChapterStats
-	json.Unmarshal(row.ChaptersByLang, &chaptersByLang)
-	if chaptersByLang == nil {
-		chaptersByLang = map[string]domain.ChapterStats{}
-	}
-
-	var updatedAt *time.Time
-	if row.UpdatedAt.Valid {
-		t := row.UpdatedAt.Time
-		updatedAt = &t
-	}
-	var createdAt time.Time
-	if row.CreatedAt.Valid {
-		createdAt = row.CreatedAt.Time
-	}
+	updatedAt := row.UpdatedAt
 
 	d := domain.MangaDetail{
 		Manga: domain.Manga{
-			ID:             row.ID,
-			DictionaryID:   row.DictionaryID,
-			Title:          row.Title,
-			Description:    row.Description,
-			Status:         row.Status,
-			CoverURL:       row.CoverUrl,
-			Authors:        authors,
-			Genres:         genres,
-			State:          domain.MangaState(row.State),
-			ChaptersByLang: chaptersByLang,
-			UpdatedAt:      updatedAt,
-			CreatedAt:      createdAt,
+			ID:           row.ID,
+			DictionaryID: row.DictionaryID,
+			Title:        row.Title,
+			Description:  row.Description,
+			Status:       row.Status,
+			CoverURL:     row.CoverUrl,
+			Authors:      authors,
+			Genres:       genres,
+			State:        domain.MangaState(row.State),
+			UpdatedAt:    &updatedAt,
+			CreatedAt:    row.CreatedAt,
 		},
 	}
 	return r.fillMangaDetail(ctx, d)
 }
 
 func (r *MySQLRepository) fillMangaDetail(ctx context.Context, d domain.MangaDetail) (domain.MangaDetail, bool, error) {
+	// Get the dictionary to compute expected chapters per language from SourceStats.
+	dictEntry, _, err := r.GetDictionary(ctx, d.DictionaryID)
+	if err != nil {
+		return domain.MangaDetail{}, false, err
+	}
+
+	// Compute expected chapters per language from SourceStats (take max across sources).
+	expectedByLang := make(map[string]int)
+	for _, stat := range dictEntry.SourceStats {
+		if stat.Err != "" {
+			continue
+		}
+		for lang, count := range stat.ChaptersByLang {
+			if count > expectedByLang[lang] {
+				expectedByLang[lang] = count
+			}
+		}
+	}
+
+	// Get per-language chapter stats via JOIN on chapters table (available count).
+	statsRows, err := r.q.GetMangaChapterStats(ctx, d.ID)
+	if err != nil {
+		return domain.MangaDetail{}, false, err
+	}
+
+	// Build Languages map.
+	langMap := make(map[string]*domain.MangaLang)
+	for _, row := range statsRows {
+		var latestUpdate *time.Time
+		if row.LatestUpdated != nil {
+			if lt, ok := row.LatestUpdated.(time.Time); ok {
+				latestUpdate = &lt
+			}
+		}
+		var available int
+		if row.Available != nil {
+			switch v := row.Available.(type) {
+			case int64:
+				available = int(v)
+			case int:
+				available = v
+			}
+		}
+		// Total from dictionary SourceStats (expected),
+		// Available = row.Total (count of chapter rows with mangaId filter as user requested),
+		// Fetched = available (uploaded chapters count, image_src non-empty).
+		total := expectedByLang[row.Lang]
+		langMap[row.Lang] = &domain.MangaLang{
+			Language:     row.Lang,
+			Total:        total,
+			Available:    int(row.Total),
+			Fetched:      available,
+			LatestUpdate: latestUpdate,
+		}
+	}
+
+	// Also add languages that have expected chapters but no chapters in DB yet.
+	for lang, total := range expectedByLang {
+		if _, ok := langMap[lang]; !ok {
+			langMap[lang] = &domain.MangaLang{
+				Language:     lang,
+				Total:        total,
+				Available:    0,
+				Fetched:      0,
+				LatestUpdate: nil,
+			}
+		}
+	}
+
+	// Get all chapters for the Chapters field.
 	chRows, err := r.q.GetChaptersByManga(ctx, d.ID)
 	if err != nil {
 		return domain.MangaDetail{}, false, err
 	}
 
-	// Group chapters by language
-	langMap := make(map[string]*domain.MangaLang)
 	chapterMap := make(map[string][]domain.MangaChapter)
-
 	for _, ch := range chRows {
 		lang := ch.Lang
-		if _, ok := langMap[lang]; !ok {
-			langMap[lang] = &domain.MangaLang{Language: lang}
-		}
-		langMap[lang].Available++
-
-		pageCount := 1
-		if ch.ImageSrc != "" {
-			pageCount = 1 // imageSrc is base path; actual page count derived from manifest
-		}
-
 		mc := domain.MangaChapter{
-			MangaID:    ch.MangaID,
-			Language:   lang,
-			ChapterNum: ch.Name,
-			PageCount:  pageCount,
-			Uploaded:   ch.ImageSrc != "",
+			MangaID:   ch.MangaID,
+			Language:  lang,
+			ID:        ch.ID,
+			Order:     int(ch.ChapterOrder),
+			Name:      ch.Name,
+			PageCount: 0,
+			Uploaded:  ch.ImageSrc != "",
 		}
 		chapterMap[lang] = append(chapterMap[lang], mc)
 	}
@@ -417,6 +435,76 @@ func (r *MySQLRepository) fillMangaDetail(ctx context.Context, d domain.MangaDet
 	}
 
 	return d, true, nil
+}
+
+// GetMangaLanguages returns per-language stats for a manga, computing total_chapters
+// from dictionary SourceStats and available_chapters from the chapters table.
+func (r *MySQLRepository) GetMangaLanguages(ctx context.Context, mangaID, dictionaryID string) ([]domain.MangaLangResponse, error) {
+	// Get dictionary for expected chapters per language from SourceStats.
+	dictEntry, found, err := r.GetDictionary(ctx, dictionaryID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+
+	// Compute expected chapters per language from SourceStats (max across sources).
+	expectedByLang := make(map[string]int)
+	for _, stat := range dictEntry.SourceStats {
+		if stat.Err != "" {
+			continue
+		}
+		for lang, count := range stat.ChaptersByLang {
+			if count > expectedByLang[lang] {
+				expectedByLang[lang] = count
+			}
+		}
+	}
+
+	// Get chapter stats (available count) from chapters table.
+	statsRows, err := r.q.GetMangaChapterStats(ctx, mangaID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build result using stats rows for available/latest, expected for total.
+	result := make([]domain.MangaLangResponse, 0)
+	for _, row := range statsRows {
+		var latestUpdate *time.Time
+		if row.LatestUpdated != nil {
+			if lt, ok := row.LatestUpdated.(time.Time); ok {
+				latestUpdate = &lt
+			}
+		}
+		result = append(result, domain.MangaLangResponse{
+			Lang:               row.Lang,
+			TotalChapters:      expectedByLang[row.Lang],
+			AvailableChapters:  int(row.Total),
+			LatestUpdate:       latestUpdate,
+		})
+	}
+
+	// Also include languages that have expected chapters but no chapters in DB yet.
+	for lang, total := range expectedByLang {
+		found := false
+		for _, r := range result {
+			if r.Lang == lang {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, domain.MangaLangResponse{
+				Lang:              lang,
+				TotalChapters:     total,
+				AvailableChapters: 0,
+				LatestUpdate:      nil,
+			})
+		}
+	}
+
+	return result, nil
 }
 
 // Chapter methods (replaces manga_chapters, manga_langs, chapter_pages, ingest_chapters)
@@ -445,7 +533,7 @@ func (r *MySQLRepository) UpsertChapterBatch(ctx context.Context, chapters []dom
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx,
-		`INSERT INTO chapters (id, manga_id, name, chapter_order, lang, image_src) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), chapter_order=VALUES(chapter_order), lang=VALUES(lang), image_src=VALUES(image_src)`)
+		`INSERT INTO chapters (id, manga_id, name, chapter_order, lang, image_src, page_urls, page_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), chapter_order=VALUES(chapter_order), lang=VALUES(lang), image_src=VALUES(image_src), page_urls=VALUES(page_urls), page_count=VALUES(page_count)`)
 	if err != nil {
 		return err
 	}
@@ -456,7 +544,9 @@ func (r *MySQLRepository) UpsertChapterBatch(ctx context.Context, chapters []dom
 		if id == "" {
 			id = uuid.New().String()
 		}
-		_, err := stmt.ExecContext(ctx, id, ch.MangaID, ch.Number, int(ch.SortKey), ch.Language, ch.Source)
+		pageURLsJSON, _ := json.Marshal(ch.PageURLs)
+		pageCount := len(ch.PageURLs)
+		_, err := stmt.ExecContext(ctx, id, ch.MangaID, ch.Number, int(ch.SortKey), ch.Language, ch.Source, pageURLsJSON, pageCount)
 		if err != nil {
 			return err
 		}
@@ -484,6 +574,7 @@ func (r *MySQLRepository) GetChaptersByLang(ctx context.Context, mangaID, lang s
 	chapters := make([]domain.Chapter, 0, len(rows))
 	for _, ch := range rows {
 		chapters = append(chapters, domain.Chapter{
+			ID:       ch.ID,
 			MangaID:  ch.MangaID,
 			Number:   ch.Name,
 			SortKey:  float64(ch.ChapterOrder),
@@ -491,6 +582,56 @@ func (r *MySQLRepository) GetChaptersByLang(ctx context.Context, mangaID, lang s
 		})
 	}
 	return chapters, nil
+}
+
+func (r *MySQLRepository) GetUploadedChaptersByLang(ctx context.Context, mangaID, lang string) ([]domain.Chapter, error) {
+	rows, err := r.q.GetUploadedChaptersByLang(ctx, queries.GetUploadedChaptersByLangParams{
+		MangaID: mangaID,
+		Lang:    lang,
+	})
+	if err != nil {
+		return nil, err
+	}
+	chapters := make([]domain.Chapter, 0, len(rows))
+	for _, ch := range rows {
+		var pageURLs []string
+		json.Unmarshal(ch.PageUrls, &pageURLs)
+		chapters = append(chapters, domain.Chapter{
+			ID:        ch.ID,
+			MangaID:   ch.MangaID,
+			Number:    ch.Name,
+			SortKey:   float64(ch.ChapterOrder),
+			Language:  ch.Lang,
+			Source:    ch.ImageSrc,
+			PageURLs:  pageURLs,
+			UpdatedAt: ch.UpdatedAt,
+			PageCount: int(ch.PageCount),
+		})
+	}
+	return chapters, nil
+}
+
+func (r *MySQLRepository) GetChapterByID(ctx context.Context, chapterID string) (*domain.Chapter, error) {
+	row, err := r.q.GetChapterByID(ctx, chapterID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var pageURLs []string
+	json.Unmarshal(row.PageUrls, &pageURLs)
+	return &domain.Chapter{
+		ID:        row.ID,
+		MangaID:   row.MangaID,
+		Number:    row.Name,
+		SortKey:   float64(row.ChapterOrder),
+		Language:  row.Lang,
+		Source:    row.ImageSrc,
+		PageURLs:  pageURLs,
+		UpdatedAt: row.UpdatedAt,
+		PageCount: int(row.PageCount),
+	}, nil
 }
 
 func (r *MySQLRepository) GetChaptersByManga(ctx context.Context, mangaID string) ([]domain.Chapter, error) {
@@ -525,6 +666,9 @@ func (r *MySQLRepository) GetChapterUploaded(ctx context.Context, mangaID, lang,
 		Lang:    lang,
 		Name:    chapterNum,
 	})
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
@@ -697,40 +841,9 @@ func scanToDictionaryEntryImpl(id, slug, title, coverUrl string, sources, source
 	}
 }
 
-// Ingest methods
-
-func (r *MySQLRepository) GetDownloadedByLang(ctx context.Context, slug string) (map[string]int, error) {
-	rows, err := r.q.GetDownloadedByLang(ctx, slug)
-	if err != nil {
-		return nil, err
-	}
-	m := make(map[string]int, len(rows))
-	for _, row := range rows {
-		m[row.Lang] = int(row.Count)
-	}
-	return m, nil
-}
-
-func (r *MySQLRepository) GetDownloadedChaptersByLang(ctx context.Context, slug, lang string) ([]string, error) {
-	rows, err := r.q.GetDownloadedChaptersByLang(ctx, queries.GetDownloadedChaptersByLangParams{
-		MangaID: slug,
-		Lang:    lang,
-	})
-	if err != nil {
-		return nil, err
-	}
-	result := make([]string, 0, len(rows))
-	for _, r := range rows {
-		result = append(result, fmt.Sprintf("%d", r))
-	}
-	return result, nil
-}
-
 // Manga methods
 
-func (r *MySQLRepository) UpdateMangaCover(ctx context.Context, slug, coverURL string) error {
-	// This is a simple UPDATE for the cover_url field.
-	// We use an exec since there's no generated query for it.
-	_, err := r.db.ExecContext(ctx, "UPDATE manga SET cover_url = ? WHERE slug = ?", coverURL, slug)
+func (r *MySQLRepository) UpdateMangaCover(ctx context.Context, mangaID, coverURL string) error {
+	_, err := r.db.ExecContext(ctx, "UPDATE manga SET cover_url = ? WHERE id = ?", coverURL, mangaID)
 	return err
 }

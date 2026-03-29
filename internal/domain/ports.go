@@ -22,15 +22,18 @@ type Repository interface {
 	ListManga(ctx context.Context, filter MangaFilter) (MangaPage, error)
 	GetMangaByDictionaryID(ctx context.Context, dictionaryID string) (MangaDetail, bool, error)
 	GetMangaByID(ctx context.Context, id string) (MangaDetail, bool, error)
+	GetMangaLanguages(ctx context.Context, mangaID, dictionaryID string) ([]MangaLangResponse, error)
 
 	// Chapters
 	UpsertChapter(ctx context.Context, id, mangaID, name string, chapterOrder int, lang, imageSrc string) error
 	UpsertChapterBatch(ctx context.Context, chapters []Chapter) error
 	GetChapterCountByLang(ctx context.Context, mangaID, lang string) (int, error)
 	GetChaptersByLang(ctx context.Context, mangaID, lang string) ([]Chapter, error)
+	GetUploadedChaptersByLang(ctx context.Context, mangaID, lang string) ([]Chapter, error)
 	GetChaptersByManga(ctx context.Context, mangaID string) ([]Chapter, error)
 	IsChapterIngested(ctx context.Context, mangaID, lang string, chapterOrder int) (bool, error)
 	GetChapterUploaded(ctx context.Context, mangaID, lang, chapterNum string) (bool, error)
+	GetChapterByID(ctx context.Context, chapterID string) (*Chapter, error)
 
 	// Dictionary
 	UpsertDictionary(ctx context.Context, entry DictionaryEntry) error
@@ -38,10 +41,6 @@ type Repository interface {
 	GetDictionary(ctx context.Context, id string) (DictionaryEntry, bool, error)
 	GetDictionaryBySlug(ctx context.Context, slug string) (DictionaryEntry, bool, error)
 	ListDictionary(ctx context.Context, filter DictionaryFilter) (DictionaryPage, error)
-
-	// Ingest
-	GetDownloadedByLang(ctx context.Context, mangaID string) (map[string]int, error)
-	GetDownloadedChaptersByLang(ctx context.Context, mangaID, lang string) ([]string, error)
 
 	// Manga (cover)
 	UpdateMangaCover(ctx context.Context, mangaID, coverURL string) error

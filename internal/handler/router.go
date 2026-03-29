@@ -24,7 +24,8 @@ func NewRouter(h *Handlers, cfg *config.Config) http.Handler {
 		r.Get("/manga", h.ListManga)
 		r.Get("/manga/{mangaId}", h.GetManga)
 		r.Get("/manga/{mangaId}/{lang}", h.GetChaptersByLang)
-		r.Get("/manga/{mangaId}/{lang}/read", h.ReadChapter)
+
+		r.Get("/read/{chapterId}", h.ReadChapter)
 
 		r.Get("/dictionary", h.SearchDictionary)
 		r.Post("/dictionary/refresh", h.RefreshDictionary)

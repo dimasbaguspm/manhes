@@ -9,9 +9,8 @@ CREATE TABLE
         genres JSON NOT NULL,
         cover_url VARCHAR(1000) NOT NULL DEFAULT '',
         state VARCHAR(20) NOT NULL DEFAULT 'unavailable',
-        chapters_by_lang JSON NOT NULL,
-        updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_dictionary_id (dictionary_id),
         INDEX idx_state (state),
         INDEX idx_title (title)

@@ -7,13 +7,13 @@ package queries
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
+	"time"
 )
 
 const getMangaByDictionaryID = `-- name: GetMangaByDictionaryID :one
 SELECT m.id, m.dictionary_id, m.title, m.description, m.status, m.authors, m.genres,
-       m.cover_url, m.state, m.chapters_by_lang, m.updated_at, m.created_at
+       m.cover_url, m.state, m.updated_at, m.created_at
 FROM manga m
 WHERE m.dictionary_id = ?
 `
@@ -31,7 +31,6 @@ func (q *Queries) GetMangaByDictionaryID(ctx context.Context, dictionaryID strin
 		&i.Genres,
 		&i.CoverUrl,
 		&i.State,
-		&i.ChaptersByLang,
 		&i.UpdatedAt,
 		&i.CreatedAt,
 	)
@@ -40,7 +39,7 @@ func (q *Queries) GetMangaByDictionaryID(ctx context.Context, dictionaryID strin
 
 const getMangaByID = `-- name: GetMangaByID :one
 SELECT m.id, m.dictionary_id, m.title, m.description, m.status, m.authors, m.genres,
-       m.cover_url, m.state, m.chapters_by_lang, m.updated_at, m.created_at
+       m.cover_url, m.state, m.updated_at, m.created_at
 FROM manga m
 WHERE m.id = ?
 `
@@ -58,16 +57,62 @@ func (q *Queries) GetMangaByID(ctx context.Context, id string) (Manga, error) {
 		&i.Genres,
 		&i.CoverUrl,
 		&i.State,
-		&i.ChaptersByLang,
 		&i.UpdatedAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
+const getMangaChapterStats = `-- name: GetMangaChapterStats :many
+SELECT
+    c.lang,
+    COUNT(*) AS total,
+    SUM(CASE WHEN c.image_src IS NOT NULL AND c.image_src != '' THEN 1 ELSE 0 END) AS available,
+    MAX(c.updated_at) AS latest_updated
+FROM chapters c
+WHERE c.manga_id = ?
+GROUP BY c.lang
+`
+
+type GetMangaChapterStatsRow struct {
+	Lang          string
+	Total         int64
+	Available     interface{}
+	LatestUpdated interface{}
+}
+
+// Returns per-language chapter stats for a manga, computed via JOIN on chapters table.
+func (q *Queries) GetMangaChapterStats(ctx context.Context, mangaID string) ([]GetMangaChapterStatsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMangaChapterStats, mangaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMangaChapterStatsRow
+	for rows.Next() {
+		var i GetMangaChapterStatsRow
+		if err := rows.Scan(
+			&i.Lang,
+			&i.Total,
+			&i.Available,
+			&i.LatestUpdated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listManga = `-- name: ListManga :many
 SELECT m.id, m.dictionary_id, m.title, m.description, m.status, m.authors, m.genres,
-       m.cover_url, m.state, m.chapters_by_lang, m.updated_at, m.created_at,
+       m.cover_url, m.state, m.updated_at, m.created_at,
        COUNT(*) OVER () AS total
 FROM manga m
 WHERE (? = '' OR m.dictionary_id = ?)
@@ -108,19 +153,18 @@ type ListMangaParams struct {
 }
 
 type ListMangaRow struct {
-	ID             string
-	DictionaryID   string
-	Title          string
-	Description    string
-	Status         string
-	Authors        json.RawMessage
-	Genres         json.RawMessage
-	CoverUrl       string
-	State          string
-	ChaptersByLang json.RawMessage
-	UpdatedAt      sql.NullTime
-	CreatedAt      sql.NullTime
-	Total          interface{}
+	ID           string
+	DictionaryID string
+	Title        string
+	Description  string
+	Status       string
+	Authors      json.RawMessage
+	Genres       json.RawMessage
+	CoverUrl     string
+	State        string
+	UpdatedAt    time.Time
+	CreatedAt    time.Time
+	Total        interface{}
 }
 
 func (q *Queries) ListManga(ctx context.Context, arg ListMangaParams) ([]ListMangaRow, error) {
@@ -164,7 +208,6 @@ func (q *Queries) ListManga(ctx context.Context, arg ListMangaParams) ([]ListMan
 			&i.Genres,
 			&i.CoverUrl,
 			&i.State,
-			&i.ChaptersByLang,
 			&i.UpdatedAt,
 			&i.CreatedAt,
 			&i.Total,
@@ -184,8 +227,8 @@ func (q *Queries) ListManga(ctx context.Context, arg ListMangaParams) ([]ListMan
 
 const upsertManga = `-- name: UpsertManga :exec
 
-INSERT INTO manga (id, dictionary_id, title, description, status, authors, genres, cover_url, state, chapters_by_lang, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO manga (id, dictionary_id, title, description, status, authors, genres, cover_url, state)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     title=VALUES(title),
     description=VALUES(description),
@@ -193,22 +236,19 @@ ON DUPLICATE KEY UPDATE
     authors=VALUES(authors),
     genres=VALUES(genres),
     cover_url=CASE WHEN VALUES(cover_url) != '' THEN VALUES(cover_url) ELSE cover_url END,
-    state=VALUES(state),
-    chapters_by_lang=VALUES(chapters_by_lang),
-    updated_at=CURRENT_TIMESTAMP
+    state=VALUES(state)
 `
 
 type UpsertMangaParams struct {
-	ID             string
-	DictionaryID   string
-	Title          string
-	Description    string
-	Status         string
-	Authors        json.RawMessage
-	Genres         json.RawMessage
-	CoverUrl       string
-	State          string
-	ChaptersByLang json.RawMessage
+	ID           string
+	DictionaryID string
+	Title        string
+	Description  string
+	Status       string
+	Authors      json.RawMessage
+	Genres       json.RawMessage
+	CoverUrl     string
+	State        string
 }
 
 // manga.sql: manga table queries
@@ -223,7 +263,6 @@ func (q *Queries) UpsertManga(ctx context.Context, arg UpsertMangaParams) error 
 		arg.Genres,
 		arg.CoverUrl,
 		arg.State,
-		arg.ChaptersByLang,
 	)
 	return err
 }

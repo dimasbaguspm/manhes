@@ -11,6 +11,80 @@ import (
 	"time"
 )
 
+const getDictionariesByIDs = `-- name: GetDictionariesByIDs :many
+SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
+FROM dictionary WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type GetDictionariesByIDsParams struct {
+	ID    string
+	ID_2  string
+	ID_3  string
+	ID_4  string
+	ID_5  string
+	ID_6  string
+	ID_7  string
+	ID_8  string
+	ID_9  string
+	ID_10 string
+}
+
+type GetDictionariesByIDsRow struct {
+	ID          string
+	Slug        string
+	Title       string
+	Sources     json.RawMessage
+	SourceStats json.RawMessage
+	BestSource  json.RawMessage
+	CoverUrl    string
+	UpdatedAt   time.Time
+	CreatedAt   time.Time
+}
+
+func (q *Queries) GetDictionariesByIDs(ctx context.Context, arg GetDictionariesByIDsParams) ([]GetDictionariesByIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDictionariesByIDs,
+		arg.ID,
+		arg.ID_2,
+		arg.ID_3,
+		arg.ID_4,
+		arg.ID_5,
+		arg.ID_6,
+		arg.ID_7,
+		arg.ID_8,
+		arg.ID_9,
+		arg.ID_10,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDictionariesByIDsRow
+	for rows.Next() {
+		var i GetDictionariesByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Sources,
+			&i.SourceStats,
+			&i.BestSource,
+			&i.CoverUrl,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDictionary = `-- name: GetDictionary :one
 SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
 FROM dictionary WHERE id = ?

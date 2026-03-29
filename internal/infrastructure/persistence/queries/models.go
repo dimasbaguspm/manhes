@@ -5,45 +5,45 @@
 package queries
 
 import (
-	"database/sql"
 	"encoding/json"
 	"time"
 )
 
 type Chapter struct {
 	ID           string
+	MangaID      string
 	Name         string
 	ChapterOrder int32
 	Lang         string
 	ImageSrc     string
-	CreatedAt    time.Time
+	PageUrls     json.RawMessage
+	PageCount    int32
 	UpdatedAt    time.Time
-	MangaID      string
+	CreatedAt    time.Time
 }
 
 type Dictionary struct {
 	ID          string
 	Slug        string
 	Title       string
+	CoverUrl    string
 	Sources     json.RawMessage
 	SourceStats json.RawMessage
 	BestSource  json.RawMessage
-	CoverUrl    string
-	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	CreatedAt   time.Time
 }
 
 type Manga struct {
-	ID             string
-	DictionaryID   string
-	Title          string
-	Description    string
-	Status         string
-	Authors        json.RawMessage
-	Genres         json.RawMessage
-	CoverUrl       string
-	State          string
-	ChaptersByLang json.RawMessage
-	UpdatedAt      sql.NullTime
-	CreatedAt      sql.NullTime
+	ID           string
+	DictionaryID string
+	Title        string
+	Description  string
+	Status       string
+	Authors      json.RawMessage
+	Genres       json.RawMessage
+	CoverUrl     string
+	State        string
+	UpdatedAt    time.Time
+	CreatedAt    time.Time
 }

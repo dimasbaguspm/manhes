@@ -7,27 +7,44 @@ package queries
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
+	"time"
 )
 
-const getChapterUploaded = `-- name: GetChapterUploaded :one
-SELECT image_src FROM chapters WHERE manga_id = ? AND lang = ? AND name = ? AND image_src IS NOT NULL AND image_src != '' LIMIT 1
+const getChapterByID = `-- name: GetChapterByID :one
+SELECT id, manga_id, name, chapter_order, lang, image_src, page_urls, page_count, updated_at
+FROM chapters
+WHERE id = ?
+LIMIT 1
 `
 
-type GetChapterUploadedParams struct {
-	MangaID string
-	Lang    string
-	Name    string
+type GetChapterByIDRow struct {
+	ID           string
+	MangaID      string
+	Name         string
+	ChapterOrder int32
+	Lang         string
+	ImageSrc     string
+	PageUrls     json.RawMessage
+	PageCount    int32
+	UpdatedAt    time.Time
 }
 
-func (q *Queries) GetChapterUploaded(ctx context.Context, arg GetChapterUploadedParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, getChapterUploaded, arg.MangaID, arg.Lang, arg.Name)
-	var imageSrc sql.NullString
-	err := row.Scan(&imageSrc)
-	if err == sql.ErrNoRows || !imageSrc.Valid || imageSrc.String == "" {
-		return "", nil
-	}
-	return imageSrc.String, err
+func (q *Queries) GetChapterByID(ctx context.Context, id string) (GetChapterByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getChapterByID, id)
+	var i GetChapterByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.MangaID,
+		&i.Name,
+		&i.ChapterOrder,
+		&i.Lang,
+		&i.ImageSrc,
+		&i.PageUrls,
+		&i.PageCount,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getChapterCountByLang = `-- name: GetChapterCountByLang :one
@@ -44,6 +61,26 @@ func (q *Queries) GetChapterCountByLang(ctx context.Context, arg GetChapterCount
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const getChapterUploaded = `-- name: GetChapterUploaded :one
+
+SELECT image_src FROM chapters WHERE manga_id = ? AND lang = ? AND name = ? AND image_src IS NOT NULL AND image_src != '' LIMIT 1
+`
+
+type GetChapterUploadedParams struct {
+	MangaID string
+	Lang    string
+	Name    string
+}
+
+// chapters.sql: unified chapters table
+// Returns the image_src if the chapter has been uploaded (image_src IS NOT NULL AND image_src != ”), empty string otherwise.
+func (q *Queries) GetChapterUploaded(ctx context.Context, arg GetChapterUploadedParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getChapterUploaded, arg.MangaID, arg.Lang, arg.Name)
+	var image_src string
+	err := row.Scan(&image_src)
+	return image_src, err
 }
 
 const getChaptersByLang = `-- name: GetChaptersByLang :many
@@ -139,6 +176,61 @@ func (q *Queries) GetChaptersByManga(ctx context.Context, mangaID string) ([]Get
 	return items, nil
 }
 
+const getUploadedChaptersByLang = `-- name: GetUploadedChaptersByLang :many
+SELECT id, manga_id, name, chapter_order, lang, image_src, page_urls, page_count, updated_at
+FROM chapters WHERE manga_id = ? AND lang = ? AND image_src IS NOT NULL AND image_src != '' ORDER BY chapter_order ASC
+`
+
+type GetUploadedChaptersByLangParams struct {
+	MangaID string
+	Lang    string
+}
+
+type GetUploadedChaptersByLangRow struct {
+	ID           string
+	MangaID      string
+	Name         string
+	ChapterOrder int32
+	Lang         string
+	ImageSrc     string
+	PageUrls     json.RawMessage
+	PageCount    int32
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) GetUploadedChaptersByLang(ctx context.Context, arg GetUploadedChaptersByLangParams) ([]GetUploadedChaptersByLangRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUploadedChaptersByLang, arg.MangaID, arg.Lang)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUploadedChaptersByLangRow
+	for rows.Next() {
+		var i GetUploadedChaptersByLangRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MangaID,
+			&i.Name,
+			&i.ChapterOrder,
+			&i.Lang,
+			&i.ImageSrc,
+			&i.PageUrls,
+			&i.PageCount,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const isChapterIngested = `-- name: IsChapterIngested :one
 SELECT COUNT(*) FROM chapters WHERE manga_id = ? AND lang = ? AND chapter_order = ?
 `
@@ -157,12 +249,12 @@ func (q *Queries) IsChapterIngested(ctx context.Context, arg IsChapterIngestedPa
 }
 
 const upsertChapter = `-- name: UpsertChapter :exec
-
-INSERT INTO chapters (id, manga_id, name, chapter_order, lang, image_src)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO chapters (id, manga_id, name, chapter_order, lang, image_src, page_urls, page_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     name=VALUES(name), chapter_order=VALUES(chapter_order),
-    lang=VALUES(lang), image_src=VALUES(image_src)
+    lang=VALUES(lang), image_src=VALUES(image_src),
+    page_urls=VALUES(page_urls), page_count=VALUES(page_count)
 `
 
 type UpsertChapterParams struct {
@@ -172,9 +264,10 @@ type UpsertChapterParams struct {
 	ChapterOrder int32
 	Lang         string
 	ImageSrc     string
+	PageUrls     json.RawMessage
+	PageCount    int32
 }
 
-// chapters.sql: unified chapters table
 func (q *Queries) UpsertChapter(ctx context.Context, arg UpsertChapterParams) error {
 	_, err := q.db.ExecContext(ctx, upsertChapter,
 		arg.ID,
@@ -183,6 +276,8 @@ func (q *Queries) UpsertChapter(ctx context.Context, arg UpsertChapterParams) er
 		arg.ChapterOrder,
 		arg.Lang,
 		arg.ImageSrc,
+		arg.PageUrls,
+		arg.PageCount,
 	)
 	return err
 }

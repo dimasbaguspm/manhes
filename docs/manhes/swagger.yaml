@@ -4,11 +4,15 @@ consumes:
 definitions:
   domain.ChapterItem:
     properties:
-      chapter:
+      id:
         type: string
+      name:
+        type: string
+      order:
+        type: integer
       page_count:
         type: integer
-      uploaded_at:
+      updated_at:
         type: string
     type: object
   domain.ChapterListResponse:
@@ -24,11 +28,9 @@ definitions:
     type: object
   domain.ChapterReadResponse:
     properties:
-      chapter:
+      chapter_id:
         type: string
-      id:
-        type: string
-      lang:
+      manga_id:
         type: string
       next_chapter:
         type: string
@@ -38,13 +40,6 @@ definitions:
         type: array
       prev_chapter:
         type: string
-    type: object
-  domain.ChapterStats:
-    properties:
-      available:
-        type: integer
-      total:
-        type: integer
     type: object
   domain.DictionaryRefreshRequest:
     properties:
@@ -92,6 +87,8 @@ definitions:
         type: string
       description:
         type: string
+      dictionary_id:
+        type: string
       genres:
         items:
           type: string
@@ -121,8 +118,6 @@ definitions:
         type: string
       total_chapters:
         type: integer
-      uploaded_chapters:
-        type: integer
     type: object
   domain.MangaListResponse:
     properties:
@@ -145,10 +140,6 @@ definitions:
         items:
           type: string
         type: array
-      chapters_by_lang:
-        additionalProperties:
-          $ref: '#/definitions/domain.ChapterStats'
-        type: object
       cover_url:
         type: string
       created_at:
@@ -163,6 +154,10 @@ definitions:
         type: array
       id:
         type: string
+      languages:
+        items:
+          $ref: '#/definitions/domain.MangaLangResponse'
+        type: array
       state:
         type: string
       status:
@@ -327,10 +322,10 @@ paths:
       - manga
   /manga/{mangaId}:
     get:
-      description: mangaId is the dictionary entry UUID. Unavailable/fetching manga
-        return partial detail.
+      description: mangaId is the manga UUID. Unavailable/fetching manga return partial
+        detail.
       parameters:
-      - description: Dictionary entry UUID
+      - description: Manga UUID
         in: path
         name: mangaId
         required: true
@@ -358,7 +353,7 @@ paths:
       description: Returns all uploaded chapters for a specific language. Requires
         manga to be in available state.
       parameters:
-      - description: Dictionary entry UUID
+      - description: Manga UUID
         in: path
         name: mangaId
         required: true
@@ -386,26 +381,16 @@ paths:
       summary: List uploaded chapters for a language
       tags:
       - manga
-  /manga/{mangaId}/{lang}/read:
+  /read/{chapterId}:
     get:
       description: Returns page URLs for the requested chapter along with prev/next
-        navigation links. Requires manga to be in available state.
+        navigation links.
       parameters:
-      - description: Dictionary entry UUID
+      - description: Chapter UUID
         in: path
-        name: mangaId
+        name: chapterId
         required: true
         type: string
-      - description: Language code (e.g. en, fr)
-        in: path
-        name: lang
-        required: true
-        type: string
-      - description: Chapter number
-        in: query
-        name: chapter
-        required: true
-        type: number
       produces:
       - application/json
       responses:

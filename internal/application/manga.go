@@ -111,12 +111,12 @@ func (s *MangaService) HandleDictionaryUpdated(ctx context.Context, e domain.Dic
 			continue
 		}
 
-		// Always set state to fetching and update chapters_by_lang from dictionary.
+		// Always set state to fetching (chapters_by_lang is no longer stored on manga,
+		// but newChaptersByLang is still used to drive the ChaptersFound event).
 		manga.ID = mangaID
 		manga.DictionaryID = entry.ID
 		manga.CoverURL = entry.CoverURL
 		manga.State = domain.StateFetching
-		manga.ChaptersByLang = newChaptersByLang
 
 		if err := s.repo.UpsertManga(ctx, *manga); err != nil {
 			s.log.Error("[Manga Service]: UpsertManga failed", "mangaID", mangaID, "dictionaryID", entry.ID, "err", err)
@@ -140,7 +140,6 @@ func (s *MangaService) HandleDictionaryUpdated(ctx context.Context, e domain.Dic
 		m.DictionaryID = entry.ID
 		m.CoverURL = entry.CoverURL
 		m.State = domain.StateFetching
-		m.ChaptersByLang = newChaptersByLang
 		if err := s.repo.UpsertManga(ctx, m); err != nil {
 			s.log.Error("[Manga Service]: fallback UpsertManga failed", "mangaID", mangaID, "err", err)
 		} else {
@@ -187,7 +186,9 @@ func (s *MangaService) computeChaptersByLang(stats map[string]domain.SourceStat)
 	return result
 }
 
-// HandleChapterUploaded updates manga chapter stats (available count) after a chapter is uploaded.
+// HandleChapterUploaded is called after each chapter upload. Since manga no longer
+// stores chapters_by_lang, this just logs the event. The final manga state is set
+// by HandleMangaAvailable after all chapters are uploaded.
 func (s *MangaService) HandleChapterUploaded(ctx context.Context, e domain.ChapterUploaded) error {
 	s.log.Info("[Manga Service]: HandleChapterUploaded: received event",
 		"mangaID", e.MangaID,
@@ -195,67 +196,7 @@ func (s *MangaService) HandleChapterUploaded(ctx context.Context, e domain.Chapt
 		"language", e.Language,
 		"chapterNum", e.ChapterNum,
 	)
-
-	mangaDetail, found, err := s.repo.GetMangaByDictionaryID(ctx, e.DictionaryID)
-	if err != nil {
-		s.log.Error("[Manga Service]: HandleChapterUploaded: GetMangaByDictionaryID failed",
-			"dictionaryID", e.DictionaryID, "err", err)
-		return err
-	}
-	if !found {
-		s.log.Warn("[Manga Service]: HandleChapterUploaded: manga not found, skipping",
-			"dictionaryID", e.DictionaryID)
-		return nil
-	}
-
-	// Count uploaded chapters per language.
-	uploadedByLang := make(map[string]int)
-	storedChapters, err := s.repo.GetChaptersByLang(ctx, mangaDetail.ID, e.Language)
-	if err != nil {
-		s.log.Error("[Manga Service]: HandleChapterUploaded: GetChaptersByLang failed",
-			"mangaID", mangaDetail.ID, "lang", e.Language, "err", err)
-		return err
-	}
-	for _, ch := range storedChapters {
-		// A chapter is considered "available" if it has an image_src (was uploaded to S3).
-		uploaded, err := s.repo.GetChapterUploaded(ctx, mangaDetail.ID, ch.Language, ch.Number)
-		if err != nil {
-			s.log.Warn("[Manga Service]: HandleChapterUploaded: GetChapterUploaded failed",
-				"mangaID", mangaDetail.ID, "lang", ch.Language, "chapter", ch.Number, "err", err)
-			continue
-		}
-		if uploaded {
-			uploadedByLang[ch.Language]++
-		}
-	}
-
-	// Merge available counts into chapters_by_lang.
-	newChaptersByLang := make(map[string]domain.ChapterStats)
-	for lang, stats := range mangaDetail.ChaptersByLang {
-		newChaptersByLang[lang] = stats
-	}
-	if _, ok := newChaptersByLang[e.Language]; !ok {
-		newChaptersByLang[e.Language] = domain.ChapterStats{}
-	}
-	newChaptersByLang[e.Language] = domain.ChapterStats{
-		Total:     newChaptersByLang[e.Language].Total,
-		Available: uploadedByLang[e.Language],
-	}
-
-	m := mangaDetail.Manga
-	m.ChaptersByLang = newChaptersByLang
-
-	if err := s.repo.UpsertManga(ctx, m); err != nil {
-		s.log.Error("[Manga Service]: HandleChapterUploaded: UpsertManga failed",
-			"mangaID", mangaDetail.ID, "err", err)
-		return err
-	}
-
-	s.log.Info("[Manga Service]: HandleChapterUploaded: manga stats updated",
-		"mangaID", mangaDetail.ID,
-		"language", e.Language,
-		"available", uploadedByLang[e.Language],
-	)
+	// chapters_by_lang is no longer stored on manga; final state is computed by HandleMangaAvailable.
 	return nil
 }
 
@@ -278,7 +219,33 @@ func (s *MangaService) HandleMangaAvailable(ctx context.Context, e domain.MangaA
 		return nil
 	}
 
-	// Compute available counts per language from the chapters table.
+	// Get the dictionary to find expected chapter counts per language.
+	dictEntry, found, err := s.repo.GetDictionary(ctx, e.DictionaryID)
+	if err != nil {
+		s.log.Error("[Manga Service]: HandleMangaAvailable: GetDictionary failed",
+			"dictionaryID", e.DictionaryID, "err", err)
+		return err
+	}
+	if !found {
+		s.log.Warn("[Manga Service]: HandleMangaAvailable: dictionary not found, skipping",
+			"dictionaryID", e.DictionaryID)
+		return nil
+	}
+
+	// Compute expected chapters per language from SourceStats.
+	expectedByLang := make(map[string]int)
+	for _, stat := range dictEntry.SourceStats {
+		if stat.Err != "" {
+			continue
+		}
+		for lang, count := range stat.ChaptersByLang {
+			if count > expectedByLang[lang] {
+				expectedByLang[lang] = count
+			}
+		}
+	}
+
+	// Compute actual uploaded counts per language from the chapters table.
 	uploadedByLang := make(map[string]int)
 	storedChapters, err := s.repo.GetChaptersByManga(ctx, mangaDetail.ID)
 	if err != nil {
@@ -298,24 +265,8 @@ func (s *MangaService) HandleMangaAvailable(ctx context.Context, e domain.MangaA
 		}
 	}
 
-	// Build updated chapters_by_lang.
-	newChaptersByLang := make(map[string]domain.ChapterStats)
-	for lang, stats := range mangaDetail.ChaptersByLang {
-		newChaptersByLang[lang] = stats
-	}
-	for lang, available := range uploadedByLang {
-		if _, ok := newChaptersByLang[lang]; !ok {
-			newChaptersByLang[lang] = domain.ChapterStats{}
-		}
-		newChaptersByLang[lang] = domain.ChapterStats{
-			Total:     newChaptersByLang[lang].Total,
-			Available: available,
-		}
-	}
-
 	m := mangaDetail.Manga
 	m.State = domain.StateAvailable
-	m.ChaptersByLang = newChaptersByLang
 
 	if err := s.repo.UpsertManga(ctx, m); err != nil {
 		s.log.Error("[Manga Service]: HandleMangaAvailable: UpsertManga failed",
@@ -326,7 +277,8 @@ func (s *MangaService) HandleMangaAvailable(ctx context.Context, e domain.MangaA
 	s.log.Info("[Manga Service]: HandleMangaAvailable: manga is now available",
 		"mangaID", mangaDetail.ID,
 		"dictionaryID", e.DictionaryID,
-		"chaptersByLang", newChaptersByLang,
+		"expectedByLang", expectedByLang,
+		"uploadedByLang", uploadedByLang,
 	)
 	return nil
 }
@@ -379,10 +331,15 @@ func (s *MangaService) ListManga(ctx context.Context, filter domain.MangaFilter)
 	return s.repo.ListManga(ctx, filter)
 }
 
-// GetManga returns manga detail for a given dictionary ID.
+// GetMangaLanguages returns per-language stats for a manga.
+func (s *MangaService) GetMangaLanguages(ctx context.Context, mangaID, dictionaryID string) ([]domain.MangaLangResponse, error) {
+	return s.repo.GetMangaLanguages(ctx, mangaID, dictionaryID)
+}
+
+// GetManga returns manga detail for a given manga ID.
 // Returns false if the manga has not yet been ingested.
-func (s *MangaService) GetManga(ctx context.Context, dictionaryID string) (domain.MangaDetail, bool, error) {
-	detail, found, err := s.repo.GetMangaByDictionaryID(ctx, dictionaryID)
+func (s *MangaService) GetManga(ctx context.Context, mangaID string) (domain.MangaDetail, bool, error) {
+	detail, found, err := s.repo.GetMangaByID(ctx, mangaID)
 	if err != nil {
 		return domain.MangaDetail{}, false, err
 	}
@@ -392,9 +349,9 @@ func (s *MangaService) GetManga(ctx context.Context, dictionaryID string) (domai
 	return domain.MangaDetail{}, false, nil
 }
 
-// GetChaptersByLang returns uploaded chapters for a given dictionary ID and language.
-func (s *MangaService) GetChaptersByLang(ctx context.Context, dictionaryID, lang string) ([]domain.MangaChapter, bool, error) {
-	manga, found, err := s.repo.GetMangaByDictionaryID(ctx, dictionaryID)
+// GetChaptersByLang returns uploaded chapters for a given manga ID and language.
+func (s *MangaService) GetChaptersByLang(ctx context.Context, mangaID, lang string) ([]domain.MangaChapter, bool, error) {
+	_, found, err := s.repo.GetMangaByID(ctx, mangaID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -402,50 +359,60 @@ func (s *MangaService) GetChaptersByLang(ctx context.Context, dictionaryID, lang
 		return nil, false, nil
 	}
 
-	chapters, err := s.repo.GetChaptersByLang(ctx, manga.ID, lang)
+	chapters, err := s.repo.GetUploadedChaptersByLang(ctx, mangaID, lang)
 	if err != nil {
 		return nil, false, err
 	}
 	result := make([]domain.MangaChapter, 0, len(chapters))
 	for _, ch := range chapters {
+		var updatedAt *time.Time
+		if !ch.UpdatedAt.IsZero() {
+			ua := ch.UpdatedAt
+			updatedAt = &ua
+		}
 		result = append(result, domain.MangaChapter{
-			MangaID:    ch.MangaID,
-			Language:   ch.Language,
-			ChapterNum: ch.Number,
-			PageCount:  0,
-			Uploaded:   false,
+			MangaID:   ch.MangaID,
+			Language:  ch.Language,
+			ID:        ch.ID,
+			Order:     int(ch.SortKey),
+			Name:      ch.Number,
+			UpdatedAt: updatedAt,
+			PageCount: ch.PageCount,
+			Uploaded:  len(ch.PageURLs) > 0,
 		})
 	}
 	return result, true, nil
 }
 
-// ReadChapter returns chapter read info (pages + prev/next navigation) for a given dictionary ID, language, and chapter number.
-func (s *MangaService) ReadChapter(ctx context.Context, dictionaryID, lang string, num string) (domain.ChapterRead, bool, error) {
-	manga, found, err := s.repo.GetMangaByDictionaryID(ctx, dictionaryID)
+// ReadChapter returns chapter read info (pages + prev/next navigation) for a given chapter ID.
+func (s *MangaService) ReadChapter(ctx context.Context, chapterID string) (domain.ChapterRead, bool, error) {
+	// Get chapter directly by ID.
+	chapter, err := s.repo.GetChapterByID(ctx, chapterID)
 	if err != nil {
 		return domain.ChapterRead{}, false, err
 	}
-	if !found {
+	if chapter == nil {
 		return domain.ChapterRead{}, false, nil
 	}
 
-	chapters, err := s.repo.GetChaptersByLang(ctx, manga.ID, lang)
+	// Get all chapters for this manga/lang to compute prev/next.
+	allChapters, err := s.repo.GetChaptersByLang(ctx, chapter.MangaID, chapter.Language)
 	if err != nil {
 		return domain.ChapterRead{}, false, err
 	}
-	if len(chapters) == 0 {
-		return domain.ChapterRead{}, false, nil
-	}
 
-	result := domain.ChapterRead{}
-	for i, ch := range chapters {
-		if ch.Number == num {
+	result := domain.ChapterRead{
+		MangaID: chapter.MangaID,
+		Pages:   chapter.PageURLs,
+	}
+	for i, ch := range allChapters {
+		if ch.ID == chapterID {
 			if i > 0 {
-				prev := chapters[i-1].Number
+				prev := allChapters[i-1].ID
 				result.PrevChapter = &prev
 			}
-			if i < len(chapters)-1 {
-				next := chapters[i+1].Number
+			if i < len(allChapters)-1 {
+				next := allChapters[i+1].ID
 				result.NextChapter = &next
 			}
 			break

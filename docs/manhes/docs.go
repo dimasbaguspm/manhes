@@ -208,7 +208,7 @@ const docTemplate = `{
         },
         "/manga/{mangaId}": {
             "get": {
-                "description": "mangaId is the dictionary entry UUID. Unavailable/fetching manga return partial detail.",
+                "description": "mangaId is the manga UUID. Unavailable/fetching manga return partial detail.",
                 "produces": [
                     "application/json"
                 ],
@@ -219,7 +219,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Dictionary entry UUID",
+                        "description": "Manga UUID",
                         "name": "mangaId",
                         "in": "path",
                         "required": true
@@ -260,7 +260,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Dictionary entry UUID",
+                        "description": "Manga UUID",
                         "name": "mangaId",
                         "in": "path",
                         "required": true
@@ -295,9 +295,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/manga/{mangaId}/{lang}/read": {
+        "/read/{chapterId}": {
             "get": {
-                "description": "Returns page URLs for the requested chapter along with prev/next navigation links. Requires manga to be in available state.",
+                "description": "Returns page URLs for the requested chapter along with prev/next navigation links.",
                 "produces": [
                     "application/json"
                 ],
@@ -308,23 +308,9 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Dictionary entry UUID",
-                        "name": "mangaId",
+                        "description": "Chapter UUID",
+                        "name": "chapterId",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Language code (e.g. en, fr)",
-                        "name": "lang",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "number",
-                        "description": "Chapter number",
-                        "name": "chapter",
-                        "in": "query",
                         "required": true
                     }
                 ],
@@ -361,13 +347,19 @@ const docTemplate = `{
         "domain.ChapterItem": {
             "type": "object",
             "properties": {
-                "chapter": {
+                "id": {
                     "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
                 },
                 "page_count": {
                     "type": "integer"
                 },
-                "uploaded_at": {
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -392,13 +384,10 @@ const docTemplate = `{
         "domain.ChapterReadResponse": {
             "type": "object",
             "properties": {
-                "chapter": {
+                "chapter_id": {
                     "type": "string"
                 },
-                "id": {
-                    "type": "string"
-                },
-                "lang": {
+                "manga_id": {
                     "type": "string"
                 },
                 "next_chapter": {
@@ -412,17 +401,6 @@ const docTemplate = `{
                 },
                 "prev_chapter": {
                     "type": "string"
-                }
-            }
-        },
-        "domain.ChapterStats": {
-            "type": "object",
-            "properties": {
-                "available": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
                 }
             }
         },
@@ -496,6 +474,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "dictionary_id": {
+                    "type": "string"
+                },
                 "genres": {
                     "type": "array",
                     "items": {
@@ -539,9 +520,6 @@ const docTemplate = `{
                 },
                 "total_chapters": {
                     "type": "integer"
-                },
-                "uploaded_chapters": {
-                    "type": "integer"
                 }
             }
         },
@@ -577,12 +555,6 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "chapters_by_lang": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/domain.ChapterStats"
-                    }
-                },
                 "cover_url": {
                     "type": "string"
                 },
@@ -603,6 +575,12 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "languages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.MangaLangResponse"
+                    }
                 },
                 "state": {
                     "type": "string"

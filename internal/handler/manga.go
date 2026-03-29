@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -73,6 +72,12 @@ func (h *Handlers) ListManga(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]domain.MangaSummary, 0, len(result.Items))
 	for _, m := range result.Items {
+		// Get per-language chapter stats for this manga.
+		languages, err := h.manga.GetMangaLanguages(r.Context(), m.ID, m.DictionaryID)
+		if err != nil {
+			h.internalError(w, r, "get manga languages", err)
+			return
+		}
 		items = append(items, domain.MangaSummary{
 			ID:             m.ID,
 			DictionaryID:   m.DictionaryID,
@@ -83,7 +88,7 @@ func (h *Handlers) ListManga(w http.ResponseWriter, r *http.Request) {
 			State:          string(m.State),
 			Authors:        m.Authors,
 			Genres:         m.Genres,
-			ChaptersByLang: m.ChaptersByLang,
+			Languages:      languages,
 			UpdatedAt:      m.UpdatedAt,
 			CreatedAt:      m.CreatedAt,
 		})
@@ -108,10 +113,10 @@ func (h *Handlers) ListManga(w http.ResponseWriter, r *http.Request) {
 // GetManga handles GET /api/v1/manga/{mangaId}
 //
 // @Summary     Get manga detail
-// @Description mangaId is the dictionary entry UUID. Unavailable/fetching manga return partial detail.
+// @Description mangaId is the manga UUID. Unavailable/fetching manga return partial detail.
 // @Tags        manga
 // @Produce     json
-// @Param       mangaId  path      string  true  "Dictionary entry UUID"
+// @Param       mangaId  path      string  true  "Manga UUID"
 // @Success     200      {object}  domain.MangaDetailResponse
 // @Failure     404      {object}  httputil.ErrorResponse
 // @Failure     500      {object}  httputil.ErrorResponse
@@ -130,16 +135,17 @@ func (h *Handlers) GetManga(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := domain.MangaDetailResponse{
-		ID:          detail.ID,
-		Title:       detail.Title,
-		State:       string(detail.State),
-		Description: detail.Description,
-		Status:      detail.Status,
-		Authors:     detail.Authors,
-		Genres:      detail.Genres,
-		CoverURL:    detail.CoverURL,
-		UpdatedAt:   detail.UpdatedAt,
-		CreatedAt:   detail.CreatedAt,
+		ID:           detail.ID,
+		DictionaryID: detail.DictionaryID,
+		Title:        detail.Title,
+		State:        string(detail.State),
+		Description:  detail.Description,
+		Status:       detail.Status,
+		Authors:      detail.Authors,
+		Genres:       detail.Genres,
+		CoverURL:     detail.CoverURL,
+		UpdatedAt:    detail.UpdatedAt,
+		CreatedAt:    detail.CreatedAt,
 	}
 	for _, l := range detail.Languages {
 		resp.Languages = append(resp.Languages, domain.MangaLangResponse{
@@ -159,7 +165,7 @@ func (h *Handlers) GetManga(w http.ResponseWriter, r *http.Request) {
 // @Description Returns all uploaded chapters for a specific language. Requires manga to be in available state.
 // @Tags        manga
 // @Produce     json
-// @Param       mangaId  path   string  true  "Dictionary entry UUID"
+// @Param       mangaId  path   string  true  "Manga UUID"
 // @Param       lang     path   string  true  "Language code (e.g. en, fr)"
 // @Success     200      {object}  domain.ChapterListResponse
 // @Failure     404      {object}  httputil.ErrorResponse
@@ -182,9 +188,11 @@ func (h *Handlers) GetChaptersByLang(w http.ResponseWriter, r *http.Request) {
 	items := make([]domain.ChapterItem, 0, len(chapters))
 	for _, ch := range chapters {
 		items = append(items, domain.ChapterItem{
-			Chapter:    ch.ChapterNum,
-			PageCount:  ch.PageCount,
-			UploadedAt: ch.UploadedAt,
+			ID:        ch.ID,
+			Order:     ch.Order,
+			Name:      ch.Name,
+			UpdatedAt: ch.UpdatedAt,
+			PageCount: ch.PageCount,
 		})
 	}
 
@@ -195,31 +203,22 @@ func (h *Handlers) GetChaptersByLang(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ReadChapter handles GET /api/v1/manga/{mangaId}/{lang}/read?chapter=N
+// ReadChapter handles GET /api/v1/read/{chapterId}
 //
 // @Summary     Get chapter pages
-// @Description Returns page URLs for the requested chapter along with prev/next navigation links. Requires manga to be in available state.
+// @Description Returns page URLs for the requested chapter along with prev/next navigation links.
 // @Tags        manga
 // @Produce     json
-// @Param       mangaId  path   string  true  "Dictionary entry UUID"
-// @Param       lang     path   string  true  "Language code (e.g. en, fr)"
-// @Param       chapter  query  number  true  "Chapter number"
+// @Param       chapterId  path   string  true  "Chapter UUID"
 // @Success     200      {object}  domain.ChapterReadResponse
 // @Failure     400      {object}  httputil.ErrorResponse
 // @Failure     404      {object}  httputil.ErrorResponse
 // @Failure     500      {object}  httputil.ErrorResponse
-// @Router      /manga/{mangaId}/{lang}/read [get]
+// @Router      /read/{chapterId} [get]
 func (h *Handlers) ReadChapter(w http.ResponseWriter, r *http.Request) {
-	mangaID := chi.URLParam(r, "mangaId")
-	lang := chi.URLParam(r, "lang")
-	chapterStr := r.URL.Query().Get("chapter")
+	chapterID := chi.URLParam(r, "chapterId")
 
-	if chapterStr == "" {
-		httputil.BadRequest(w, "chapter query param is required", nil)
-		return
-	}
-
-	result, found, err := h.manga.ReadChapter(r.Context(), mangaID, lang, chapterStr)
+	result, found, err := h.manga.ReadChapter(r.Context(), chapterID)
 	if err != nil {
 		h.internalError(w, r, "read chapter", err)
 		return
@@ -230,18 +229,11 @@ func (h *Handlers) ReadChapter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := domain.ChapterReadResponse{
-		ID:      mangaID,
-		Lang:    lang,
-		Chapter: chapterStr,
-		Pages:   result.Pages,
-	}
-	if result.PrevChapter != nil {
-		s := fmt.Sprintf("/api/v1/manga/%s/%s/read?chapter=%s", mangaID, lang, *result.PrevChapter)
-		resp.PrevChapter = &s
-	}
-	if result.NextChapter != nil {
-		s := fmt.Sprintf("/api/v1/manga/%s/%s/read?chapter=%s", mangaID, lang, *result.NextChapter)
-		resp.NextChapter = &s
+		MangaID:   result.MangaID,
+		ChapterID:  chapterID,
+		Pages:      result.Pages,
+		PrevChapter: result.PrevChapter,
+		NextChapter: result.NextChapter,
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, resp)

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/google/uuid"
+
 	"manga-engine/config"
 	"manga-engine/internal/domain"
 )
@@ -101,9 +103,131 @@ func (s *FileUploadService) HandleChaptersFound(ctx context.Context, e domain.Ch
 		lang     string
 		ch       domain.Chapter
 		pageURLs []string
+		retries  int
 	}
-	jobs := make([]chapterJob, 0)
 
+	const maxRetries = 3
+
+	// Estimate job count for buffer size (cap at a reasonable number).
+	jobCount := 0
+	for _, chapters := range e.Chapters {
+		jobCount += len(chapters)
+	}
+	if jobCount == 0 {
+		jobCount = 10
+	}
+
+	// Start worker pool with buffered channel. Workers start processing immediately
+	// as jobs are pushed, without waiting for all page URLs to be fetched.
+	jobChan := make(chan chapterJob, jobCount)
+	sem := make(chan struct{}, s.cfg.IngestConcurrency)
+	var wg sync.WaitGroup
+
+	// Start workers.
+	for i := 0; i < s.cfg.IngestConcurrency; i++ {
+		wg.Add(1)
+		go func(ch chan chapterJob) {
+			defer wg.Done()
+			for job := range ch {
+				select {
+				case <-ctx.Done():
+					return
+				case sem <- struct{}{}:
+				}
+
+				func(j chapterJob) {
+					defer func() { <-sem }()
+
+					mangaID := e.MangaID
+					dictionaryID := e.DictionaryID
+					lang := j.lang
+					chapter := j.ch
+					pageURLs := j.pageURLs
+
+					s.log.Info("[FileUpload Service]: downloading chapter",
+						"mangaID", mangaID, "lang", lang, "chapter", chapter.Number, "pageCount", len(pageURLs), "retry", j.retries)
+
+					// Download pages to disk.
+					localPaths := s.downloadPages(ctx, mangaID, lang, chapter.Number, pageURLs)
+					if len(localPaths) == 0 {
+						// Download failed. Re-queue at end if retries remaining, otherwise skip.
+						if j.retries < maxRetries {
+							s.log.Warn("[FileUpload Service]: download failed, re-queuing for retry",
+								"mangaID", mangaID, "lang", lang, "chapter", chapter.Number, "retry", j.retries+1)
+							j.retries++
+							select {
+							case <-ctx.Done():
+							case ch <- j:
+							}
+						} else {
+							s.log.Error("[FileUpload Service]: downloadPages failed after max retries, skipping chapter",
+								"mangaID", mangaID, "lang", lang, "chapter", chapter.Number)
+						}
+						return
+					}
+					s.log.Info("[FileUpload Service]: pages downloaded to disk",
+						"mangaID", mangaID, "lang", lang, "chapter", chapter.Number,
+						"localPaths", localPaths)
+
+					// Publish ChapterDownloaded after disk save (before S3 upload).
+					s.bus.Publish(ctx, s.cfg.Bus.ChapterDownloaded, domain.ChapterDownloaded{
+						DictionaryID: dictionaryID,
+						MangaID:      mangaID,
+						Language:     lang,
+						ChapterNum:   chapter.Number,
+						SortKey:      chapter.SortKey,
+						PageCount:    len(localPaths),
+					})
+					s.log.Info("[FileUpload Service]: ChapterDownloaded published",
+						"mangaID", mangaID, "lang", lang, "chapter", chapter.Number, "pageCount", len(localPaths))
+
+					// Generate chapter ID for use in S3 path.
+					chapterID := uuid.New().String()
+
+					// Upload pages to S3 with chapter ID in path.
+					s3URLs := s.uploadPages(ctx, mangaID, lang, chapterID, localPaths)
+					s.log.Info("[FileUpload Service]: S3 upload complete",
+						"mangaID", mangaID, "lang", lang, "chapter", chapter.Number,
+						"s3URLCount", len(s3URLs))
+
+					// Cleanup local files after upload completes.
+					s.cleanupPages(localPaths)
+
+					// Upsert chapter with image_src before publishing ChapterUploaded,
+					// so HandleChapterUploaded can correctly count available chapters.
+					if len(s3URLs) > 0 {
+						chapterImgSrc := fmt.Sprintf("%s/%s/%s", mangaID, lang, chapterID)
+						if err := s.repo.UpsertChapterBatch(ctx, []domain.Chapter{{
+							ID:       chapterID,
+							MangaID:  mangaID,
+							Number:   chapter.Number,
+							SortKey:  chapter.SortKey,
+							Language: lang,
+							Source:   chapterImgSrc,
+							PageURLs: s3URLs,
+						}}); err != nil {
+							s.log.Error("[FileUpload Service] upload: UpsertChapterBatch failed",
+								"mangaID", mangaID, "lang", lang, "chapter", chapter.Number, "err", err)
+						}
+
+						s.bus.Publish(ctx, s.cfg.Bus.ChapterUploaded, domain.ChapterUploaded{
+							DictionaryID: dictionaryID,
+							MangaID:      mangaID,
+							Language:     lang,
+							ChapterNum:   chapter.Number,
+							SortKey:      chapter.SortKey,
+							PageCount:    len(s3URLs),
+							S3URLs:       s3URLs,
+						})
+						s.log.Info("[FileUpload Service]: ChapterUploaded published",
+							"mangaID", mangaID, "lang", lang, "chapter", chapter.Number, "pageCount", len(s3URLs))
+					}
+				}(job)
+			}
+		}(jobChan)
+	}
+
+	// Process chapters and push to workers immediately as page URLs are fetched.
 	for lang := range e.Chapters {
 		// Resolve the best source for this language.
 		srcName := entry.BestSource[lang]
@@ -191,108 +315,26 @@ func (s *FileUploadService) HandleChaptersFound(ctx context.Context, e domain.Ch
 
 			chWithURLs := ch
 			chWithURLs.PageURLs = pageURLs
-			jobs = append(jobs, chapterJob{lang: lang, ch: chWithURLs, pageURLs: pageURLs})
+
+			// Push to channel immediately so workers can start downloading
+			// while we continue fetching page URLs for other chapters.
+			select {
+			case <-ctx.Done():
+				s.log.Warn("[FileUpload Service]: context cancelled, aborting", "mangaID", e.MangaID)
+				close(jobChan)
+				wg.Wait()
+				return ctx.Err()
+			case jobChan <- chapterJob{lang: lang, ch: chWithURLs, pageURLs: pageURLs, retries: 0}:
+			}
 		}
 	}
 
-	if len(jobs) == 0 {
-		s.log.Info("[FileUpload Service]: no chapters with page URLs to process")
-		return nil
-	}
-	s.log.Info("[FileUpload Service]: starting download pipeline",
-		"mangaID", e.MangaID,
-		"jobCount", len(jobs),
-		"concurrency", s.cfg.IngestConcurrency,
-	)
-
-	sem := make(chan struct{}, s.cfg.IngestConcurrency)
-	var wg sync.WaitGroup
-	var firstErr error
-
-	for _, job := range jobs {
-		select {
-		case <-ctx.Done():
-			s.log.Warn("[FileUpload Service]: context cancelled, aborting", "mangaID", e.MangaID)
-			return ctx.Err()
-		case sem <- struct{}{}:
-		}
-
-		wg.Add(1)
-		go func(mangaID, dictionaryID, lang string, ch domain.Chapter, pageURLs []string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			s.log.Info("[FileUpload Service]: downloading chapter",
-				"mangaID", mangaID, "lang", lang, "chapter", ch.Number, "pageCount", len(pageURLs))
-
-			// Download pages to disk.
-			localPaths := s.downloadPages(ctx, mangaID, lang, ch.Number, pageURLs)
-			if len(localPaths) == 0 {
-				s.log.Warn("[FileUpload Service]: downloadPages returned no paths, skipping chapter",
-					"mangaID", mangaID, "lang", lang, "chapter", ch.Number)
-				return
-			}
-			s.log.Info("[FileUpload Service]: pages downloaded to disk",
-				"mangaID", mangaID, "lang", lang, "chapter", ch.Number,
-				"localPaths", localPaths)
-
-			// Publish ChapterDownloaded after disk save (before S3 upload).
-			s.bus.Publish(ctx, s.cfg.Bus.ChapterDownloaded, domain.ChapterDownloaded{
-				DictionaryID: dictionaryID,
-				MangaID:      mangaID,
-				Language:     lang,
-				ChapterNum:   ch.Number,
-				SortKey:      ch.SortKey,
-				PageCount:    len(localPaths),
-			})
-			s.log.Info("[FileUpload Service]: ChapterDownloaded published",
-				"mangaID", mangaID, "lang", lang, "chapter", ch.Number, "pageCount", len(localPaths))
-
-			// Upload pages to S3.
-			s3URLs := s.uploadPages(ctx, mangaID, lang, ch.Number, localPaths)
-			s.log.Info("[FileUpload Service]: S3 upload complete",
-				"mangaID", mangaID, "lang", lang, "chapter", ch.Number,
-				"s3URLCount", len(s3URLs))
-
-			// Cleanup local files after upload completes.
-			s.cleanupPages(localPaths)
-
-			// Upsert chapter with image_src before publishing ChapterUploaded,
-			// so HandleChapterUploaded can correctly count available chapters.
-			if len(s3URLs) > 0 {
-				chapterImgSrc := fmt.Sprintf("%s/%s/%s", mangaID, lang, ch.Number)
-				if err := s.repo.UpsertChapterBatch(ctx, []domain.Chapter{{
-					MangaID:  mangaID,
-					Number:   ch.Number,
-					SortKey:  ch.SortKey,
-					Language: lang,
-					Source:   chapterImgSrc,
-					PageURLs: s3URLs,
-				}}); err != nil {
-					s.log.Error("[FileUpload Service] upload: UpsertChapterBatch failed",
-						"mangaID", mangaID, "lang", lang, "chapter", ch.Number, "err", err)
-				}
-
-				s.bus.Publish(ctx, s.cfg.Bus.ChapterUploaded, domain.ChapterUploaded{
-					DictionaryID: dictionaryID,
-					MangaID:      mangaID,
-					Language:     lang,
-					ChapterNum:   ch.Number,
-					SortKey:      ch.SortKey,
-					PageCount:    len(s3URLs),
-					S3URLs:       s3URLs,
-				})
-				s.log.Info("[FileUpload Service]: ChapterUploaded published",
-					"mangaID", mangaID, "lang", lang, "chapter", ch.Number, "pageCount", len(s3URLs))
-			}
-		}(e.MangaID, e.DictionaryID, job.lang, job.ch, job.pageURLs)
-	}
+	close(jobChan)
 
 	wg.Wait()
 	s.log.Info("[FileUpload Service]: download pipeline complete",
 		"mangaID", e.MangaID,
 		"dictionaryID", e.DictionaryID,
-		"firstErr", firstErr,
 	)
 
 	// Check if all expected chapters have been uploaded and publish MangaAvailable if so.
@@ -326,7 +368,7 @@ func (s *FileUploadService) HandleChaptersFound(ctx context.Context, e domain.Ch
 		}
 	}
 
-	return firstErr
+	return nil
 }
 
 // fetchChapterListFromSource fetches the full chapter list for a manga from the given source.
@@ -375,15 +417,28 @@ func (s *FileUploadService) fetchPageURLsFromSource(ctx context.Context, srcName
 // checkMangaAllUploaded checks whether all expected chapters for a manga have been
 // uploaded to S3. It returns (reason, true) if all are uploaded, or (reason, false) otherwise.
 func (s *FileUploadService) checkMangaAllUploaded(ctx context.Context, mangaID, dictionaryID string) (string, bool) {
-	// Get expected chapter counts from the manga's chapters_by_lang.
-	mangaDetail, found, err := s.repo.GetMangaByDictionaryID(ctx, dictionaryID)
+	// Get expected chapter counts from the dictionary's SourceStats.
+	dictEntry, found, err := s.repo.GetDictionary(ctx, dictionaryID)
 	if err != nil || !found {
-		return "manga_not_found", false
+		return "dictionary_not_found", false
+	}
+
+	// Compute expected chapters per language from SourceStats.
+	expectedByLang := make(map[string]int)
+	for _, stat := range dictEntry.SourceStats {
+		if stat.Err != "" {
+			continue
+		}
+		for lang, count := range stat.ChaptersByLang {
+			if count > expectedByLang[lang] {
+				expectedByLang[lang] = count
+			}
+		}
 	}
 
 	// Get actual uploaded counts per language from the chapters table.
 	uploadedByLang := make(map[string]int)
-	for lang := range mangaDetail.ChaptersByLang {
+	for lang := range expectedByLang {
 		storedChapters, err := s.repo.GetChaptersByLang(ctx, mangaID, lang)
 		if err != nil {
 			return fmt.Sprintf("get_chapters_failed:%s", lang), false
@@ -400,10 +455,10 @@ func (s *FileUploadService) checkMangaAllUploaded(ctx context.Context, mangaID, 
 	}
 
 	// Compare uploaded counts against expected totals.
-	for lang, expected := range mangaDetail.ChaptersByLang {
+	for lang, expected := range expectedByLang {
 		uploaded := uploadedByLang[lang]
-		if uploaded < expected.Total {
-			return fmt.Sprintf("lang_%s: %d/%d uploaded", lang, uploaded, expected.Total), false
+		if uploaded < expected {
+			return fmt.Sprintf("lang_%s: %d/%d uploaded", lang, uploaded, expected), false
 		}
 	}
 
@@ -449,8 +504,8 @@ func (s *FileUploadService) downloadPages(ctx context.Context, mangaID, lang, ch
 
 // uploadPages reads local files and uploads them to S3, returning the resulting S3 URLs.
 // It is context-aware and will abort early if the context is cancelled.
-func (s *FileUploadService) uploadPages(ctx context.Context, mangaID, lang, chapterNum string, localPaths []string) []string {
-	keyPrefix := fmt.Sprintf("%s/%s/%s", mangaID, lang, chapterNum)
+func (s *FileUploadService) uploadPages(ctx context.Context, mangaID, lang, chapterID string, localPaths []string) []string {
+	keyPrefix := fmt.Sprintf("%s/%s/%s", mangaID, lang, chapterID)
 	urls := make([]string, 0, len(localPaths))
 	for i, path := range localPaths {
 		select {

@@ -19,6 +19,10 @@ FROM dictionary WHERE id = ?;
 SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
 FROM dictionary WHERE slug = ?;
 
+-- name: GetDictionariesByIDs :many
+SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
+FROM dictionary WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 -- name: ListDictionary :many
 WITH filtered AS (
     SELECT id, slug, title, sources, source_stats, best_source, cover_url, updated_at, created_at
