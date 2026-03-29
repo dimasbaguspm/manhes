@@ -58,6 +58,11 @@ type DictionaryManager interface {
 	Refresh(ctx context.Context, id string) (DictionaryEntry, error)
 }
 
+// DictionarySubscriber handles dictionary-related events.
+type DictionarySubscriber interface {
+	HandleDictionaryRefreshed(ctx context.Context, e DictionaryRefreshed) error
+}
+
 // DictionaryRefreshRequest is the JSON body for the /dictionary/refresh endpoint.
 type DictionaryRefreshRequest struct {
 	DictionaryID string `json:"dictionaryId"`

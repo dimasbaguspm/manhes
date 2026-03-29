@@ -1,4 +1,4 @@
-package application
+package daemon
 
 import (
 	"context"
@@ -11,29 +11,29 @@ import (
 	"manga-engine/internal/domain"
 )
 
-// IngestDaemonConfig holds dependencies for IngestDaemon.
-type IngestDaemonConfig struct {
-	Repo     domain.Repository
-	DictSvc  *DictionaryService
-	DiskPath string
-	Cfg      *config.Config
+// IngestConfig holds dependencies for the ingest daemon.
+type IngestConfig struct {
+	Repo    domain.Repository
+	DictSvc domain.DictionaryManager
+	Cfg     *config.Config
 }
 
 // IngestDaemon periodically refreshes manga dictionary entries and cleans up
 // orphaned manga directories on disk.
 type IngestDaemon struct {
 	repo     domain.Repository
-	dictSvc  *DictionaryService
+	dictSvc  domain.DictionaryManager
 	diskPath string
 	interval time.Duration
 	log      *slog.Logger
 }
 
-func NewIngestDaemon(cfg IngestDaemonConfig) *IngestDaemon {
+// NewIngestDaemon creates a new IngestDaemon.
+func NewIngestDaemon(cfg IngestConfig) *IngestDaemon {
 	return &IngestDaemon{
 		repo:     cfg.Repo,
 		dictSvc:  cfg.DictSvc,
-		diskPath: cfg.DiskPath,
+		diskPath: cfg.Cfg.LibraryPath,
 		interval: cfg.Cfg.DictionaryRefreshInterval,
 		log:      slog.With("daemon", "ingest"),
 	}

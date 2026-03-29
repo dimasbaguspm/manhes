@@ -227,22 +227,3 @@ func (s *DictionaryService) Refresh(ctx context.Context, id string) (domain.Dict
 	s.log.Info("[DictionaryService] Refresh: completed", "dictionaryID", id)
 	return updated, nil
 }
-
-// HandleDictionaryRefreshed processes a DictionaryRefreshed event by calling Refresh.
-func (s *DictionaryService) HandleDictionaryRefreshed(ctx context.Context, e domain.DictionaryRefreshed) error {
-	s.log.Info("[DictionaryService] HandleDictionaryRefreshed: received event",
-		"dictionaryID", e.DictionaryID,
-	)
-	_, err := s.Refresh(ctx, e.DictionaryID)
-	if err != nil {
-		s.log.Error("[DictionaryService] HandleDictionaryRefreshed: Refresh failed",
-			"dictionaryID", e.DictionaryID,
-			"err", err,
-		)
-		return err
-	}
-	s.log.Info("[DictionaryService] HandleDictionaryRefreshed: completed",
-		"dictionaryID", e.DictionaryID,
-	)
-	return nil
-}

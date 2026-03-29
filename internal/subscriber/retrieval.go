@@ -1,4 +1,4 @@
-package application
+package subscriber
 
 import (
 	"context"
@@ -11,18 +11,18 @@ import (
 	"manga-engine/internal/domain"
 )
 
-// RetrievalHandlerConfig holds dependencies for RetrievalHandler.
-type RetrievalHandlerConfig struct {
+// RetrievalSubscriberConfig holds dependencies for RetrievalSubscriber.
+type RetrievalSubscriberConfig struct {
 	Repo     domain.Repository
 	Registry domain.SourceRegistry
 	Bus      domain.EventBus
 	Cfg      *config.Config
 }
 
-// RetrievalHandler reacts to IngestRequested events, fetches manga detail and
+// RetrievalSubscriber reacts to IngestRequested events, fetches manga detail and
 // chapter lists from sources, diffs against stored chapters, and publishes
 // ChaptersFound for chapters that need processing.
-type RetrievalHandler struct {
+type RetrievalSubscriber struct {
 	repo     domain.Repository
 	registry domain.SourceRegistry
 	bus      domain.EventBus
@@ -30,19 +30,24 @@ type RetrievalHandler struct {
 	log      *slog.Logger
 }
 
-func NewRetrievalHandler(cfg RetrievalHandlerConfig) *RetrievalHandler {
-	return &RetrievalHandler{
+func NewRetrievalSubscriber(cfg RetrievalSubscriberConfig) *RetrievalSubscriber {
+	return &RetrievalSubscriber{
 		repo:     cfg.Repo,
 		registry: cfg.Registry,
 		bus:      cfg.Bus,
 		cfg:      cfg.Cfg,
-		log:      slog.With("service", "retrieval"),
+		log:      slog.With("component", "subscriber"),
 	}
 }
 
 // HandleIngestRequested reacts to IngestRequested, fetches manga detail and
 // chapter lists from sources, and publishes ChaptersFound for new chapters.
-func (h *RetrievalHandler) HandleIngestRequested(ctx context.Context, e domain.IngestRequested) error {
+func (h *RetrievalSubscriber) HandleIngestRequested(ctx context.Context, e domain.IngestRequested) error {
+	h.log.Info("[Retrieval Subscriber]: HandleIngestRequested: received event",
+		"dictionaryID", e.DictionaryID,
+		"mangaID", e.MangaID,
+	)
+
 	// Step 0: Generate or validate mangaID.
 	mangaID := e.MangaID
 	if mangaID == "" {
@@ -68,7 +73,7 @@ func (h *RetrievalHandler) HandleIngestRequested(ctx context.Context, e domain.I
 		langToSrc = entry.BestSource
 	}
 	if len(sourceMap) == 0 {
-		h.log.Warn("HandleIngestRequested: no sources available", "dictionaryID", e.DictionaryID)
+		h.log.Warn("[Retrieval Subscriber]: no sources available", "dictionaryID", e.DictionaryID)
 		return nil
 	}
 
@@ -80,7 +85,7 @@ func (h *RetrievalHandler) HandleIngestRequested(ctx context.Context, e domain.I
 	for lang, chapters := range byLang {
 		stored, err := h.repo.GetChaptersByLang(ctx, mangaID, lang)
 		if err != nil {
-			h.log.Warn("HandleIngestRequested: get stored chapters", "mangaID", mangaID, "lang", lang, "err", err)
+			h.log.Warn("[Retrieval Subscriber]: get stored chapters", "mangaID", mangaID, "lang", lang, "err", err)
 			continue
 		}
 		newChapters := diffChapters(stored, chapters)
@@ -96,7 +101,7 @@ func (h *RetrievalHandler) HandleIngestRequested(ctx context.Context, e domain.I
 			MangaID:      mangaID,
 			Chapters:     newChaptersByLang,
 		}); err != nil {
-			h.log.Warn("HandleIngestRequested: publish ChaptersFound", "mangaID", mangaID, "err", err)
+			h.log.Warn("[Retrieval Subscriber]: publish ChaptersFound", "mangaID", mangaID, "err", err)
 		}
 	}
 
@@ -105,10 +110,10 @@ func (h *RetrievalHandler) HandleIngestRequested(ctx context.Context, e domain.I
 
 // fetchFromSources queries all sources concurrently, groups chapters by language
 // (respecting LangToSource), and returns the merged chapter list keyed by language.
-func (h *RetrievalHandler) fetchFromSources(
+func (h *RetrievalSubscriber) fetchFromSources(
 	ctx context.Context,
 	mangaID string,
-	dictionaryID string,
+	_ string, // dictionaryID (reserved for future use)
 	sourceMap map[string]string,
 	langToSrc map[string]string,
 ) map[string][]domain.Chapter {
@@ -136,7 +141,7 @@ func (h *RetrievalHandler) fetchFromSources(
 	for range sourceMap {
 		res := <-resultCh
 		if res.err != nil {
-			h.log.Warn("fetchFromSources: source error", "mangaID", mangaID, "source", res.srcName, "err", res.err)
+			h.log.Warn("[Retrieval Subscriber]: fetchFromSources: source error", "mangaID", mangaID, "source", res.srcName, "err", res.err)
 			continue
 		}
 		for _, ch := range res.chapters {
@@ -153,7 +158,7 @@ func (h *RetrievalHandler) fetchFromSources(
 }
 
 // scraperFor returns the scraper registered under the given source name, or nil.
-func (h *RetrievalHandler) scraperFor(name string) domain.Scraper {
+func (h *RetrievalSubscriber) scraperFor(name string) domain.Scraper {
 	for _, candidate := range h.registry.Ordered() {
 		if candidate.Source() == name {
 			return candidate
