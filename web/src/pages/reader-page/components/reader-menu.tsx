@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { Icon } from '@/components'
+import { ButtonIcon } from '@/components/ui'
 import type { ReactNode } from 'react'
 
 interface ReaderMenuProps {
@@ -42,13 +43,14 @@ export function ReaderMenu({ open, onClose, children }: ReaderMenuProps) {
         <aside className="fixed right-0 top-[3.25rem] z-40 hidden h-[calc(100vh-3.25rem)] w-72 overflow-y-auto border-l border-gray-800 bg-gray-950 md:block">
           <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
             <span className="text-sm font-semibold text-gray-200">Reader settings</span>
-            <button
+            <ButtonIcon
+              variant="ghost"
+              size="sm"
               onClick={onClose}
               aria-label="Close settings"
-              className="rounded p-0.5 text-gray-600 transition hover:text-gray-300"
             >
               <Icon as={X} size="small" />
-            </button>
+            </ButtonIcon>
           </div>
           {children}
         </aside>

@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { Icon } from '@/components'
+import { ButtonIcon } from '@/components/ui'
 
 interface ShortcutsOverlayProps {
   open: boolean
@@ -33,13 +34,14 @@ export function ShortcutsOverlay({ open, onClose }: ShortcutsOverlayProps) {
       <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-gray-800 bg-gray-950 p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-200">Keyboard shortcuts</h2>
-          <button
+          <ButtonIcon
+            variant="ghost"
+            size="sm"
             onClick={onClose}
             aria-label="Close shortcuts"
-            className="rounded p-0.5 text-gray-600 transition hover:text-gray-300"
           >
             <Icon as={X} size="small" />
-          </button>
+          </ButtonIcon>
         </div>
 
         <div className="space-y-2">

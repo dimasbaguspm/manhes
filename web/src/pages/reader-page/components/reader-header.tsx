@@ -1,9 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Keyboard, Settings } from 'lucide-react'
 import { Icon } from '@/components'
-
-const navBtn =
-  'inline-flex items-center gap-1 rounded border border-gray-700 px-3 py-1 text-xs text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
+import { Button, ButtonIcon } from '@/components/ui'
 
 interface ReaderHeaderProps {
   visible: boolean
@@ -53,30 +51,33 @@ export function ReaderHeader({
 
         <div className="flex shrink-0 items-center gap-2">
           <div className="hidden items-center gap-2 md:flex">
-            <button onClick={onPrev} disabled={prevDisabled} className={navBtn}>
+            <Button variant="outline" color="muted" size="sm" onClick={onPrev} disabled={prevDisabled}>
               <Icon as={ChevronLeft} size="small" /> Prev
-            </button>
-            <button onClick={onNext} disabled={nextDisabled} className={navBtn}>
+            </Button>
+            <Button variant="outline" color="muted" size="sm" onClick={onNext} disabled={nextDisabled}>
               Next <Icon as={ChevronRight} size="small" />
-            </button>
+            </Button>
           </div>
 
-          <button
+          <ButtonIcon
+            variant="ghost"
+            size="sm"
             onClick={onShortcutsToggle}
             aria-label="Keyboard shortcuts"
             title="Keyboard shortcuts (/)"
-            className={navBtn}
           >
             <Icon as={Keyboard} />
-          </button>
+          </ButtonIcon>
 
-          <button
+          <ButtonIcon
+            variant="ghost"
+            size="sm"
             onClick={onMenuToggle}
             aria-label="Reader settings"
-            className={`${navBtn} ${menuOpen ? 'border-indigo-600 text-indigo-400' : ''}`}
+            className={menuOpen ? 'text-indigo-400' : undefined}
           >
             <Icon as={Settings} />
-          </button>
+          </ButtonIcon>
         </div>
       </div>
     </div>

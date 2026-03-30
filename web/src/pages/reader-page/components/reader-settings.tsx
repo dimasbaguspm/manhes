@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Toggle } from '@/pages/reader-page/components/toggle'
 import { Icon } from '@/components/icon'
+import { Button } from '@/components/ui'
 import type { ReaderSettings } from '@/pages/reader-page/components/use-reader-settings'
 
 const STRIP_WIDTH_OPTIONS = [
@@ -17,9 +18,6 @@ const BG_COLOR_OPTIONS = [
 ]
 
 const AUTO_SCROLL_LABELS = ['', 'Slow', 'Medium', 'Fast', 'Faster', 'Turbo']
-
-const navBtn =
-  'rounded border border-gray-700 px-3 py-1 text-xs text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
 
 interface ReaderSettingsPanelProps {
   settings: ReaderSettings
@@ -116,12 +114,12 @@ export function ReaderSettingsPanel({
 
       {/* Chapter navigation shown only inside the mobile sheet */}
       <section className="flex gap-2 pb-2 md:hidden">
-        <button onClick={onPrev} disabled={prevDisabled} className={`flex-1 py-2 ${navBtn}`}>
+        <Button variant="outline" color="muted" onClick={onPrev} disabled={prevDisabled} className="flex-1 py-2">
           <Icon as={ChevronLeft} size="small" className="mr-1 inline" /> Prev chapter
-        </button>
-        <button onClick={onNext} disabled={nextDisabled} className={`flex-1 py-2 ${navBtn}`}>
+        </Button>
+        <Button variant="outline" color="muted" onClick={onNext} disabled={nextDisabled} className="flex-1 py-2">
           Next chapter <Icon as={ChevronRight} size="small" className="ml-1 inline" />
-        </button>
+        </Button>
       </section>
 
     </div>

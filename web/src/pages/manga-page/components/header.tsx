@@ -1,5 +1,6 @@
 import { Heart } from 'lucide-react'
-import { Icon } from '@/components'
+import { Icon } from '@/components/icon'
+import { Heading } from '@/components/ui'
 
 interface MangaDetailHeaderProps {
   title: string
@@ -12,7 +13,9 @@ export function MangaDetailHeader({ title, authors, isFavorite, onToggleFavorite
   return (
     <div>
       <div className="flex items-start justify-center gap-2 sm:justify-start">
-        <h1 className="text-2xl font-bold text-gray-100">{title}</h1>
+        <Heading level="h1" className="text-2xl font-bold text-gray-100">
+          {title}
+        </Heading>
         <button
           onClick={onToggleFavorite}
           aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}

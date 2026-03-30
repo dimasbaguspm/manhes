@@ -3,7 +3,8 @@ import { DEEP_LINKS } from '@/lib/deep-links'
 import { formatDate, DateFormat } from '@/lib/format-date'
 import { Bookmark } from 'lucide-react'
 import { Icon } from '@/components'
-import { NoResults } from './no-results'
+import { Badge, Button } from '@/components/ui'
+import { NoResults } from '@/components/ui'
 import type { DomainChapterListResponse } from '@/types'
 
 interface ChaptersPanelProps {
@@ -37,7 +38,7 @@ export function ChaptersPanel({
     )
   }
 
-  if (chapterError) return <NoResults message={chapterError} error />
+  if (chapterError) return <NoResults message={chapterError} variant="error" />
 
   const chapters = chapterData?.chapters ?? []
   if (chapters.length === 0) {
@@ -75,9 +76,9 @@ export function ChaptersPanel({
                   {chName}
                 </span>
                 {isLatest && (
-                  <span className="shrink-0 rounded-full bg-indigo-900 px-2 py-0.5 text-xs text-indigo-300">
+                  <Badge variant="primary" size="sm">
                     Last read
-                  </span>
+                  </Badge>
                 )}
               </div>
 
@@ -94,17 +95,15 @@ export function ChaptersPanel({
               </div>
             </Link>
 
-            <button
+            <Button
+              variant={isBookmarked ? 'danger' : 'ghost'}
+              color={isBookmarked ? 'danger' : 'muted'}
+              size="sm"
               onClick={() => onToggleBookmark(chId)}
               aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark chapter'}
-              className={`shrink-0 rounded-lg border p-2.5 transition ${
-                isBookmarked
-                  ? 'border-yellow-700 bg-yellow-900/30 text-yellow-400 hover:bg-yellow-900/50'
-                  : 'border-gray-700 bg-gray-900 text-gray-600 hover:border-gray-600 hover:text-gray-400'
-              }`}
             >
               <Icon as={Bookmark} size="small" fill={isBookmarked ? 'currentColor' : 'none'} />
-            </button>
+            </Button>
           </div>
         )
       })}

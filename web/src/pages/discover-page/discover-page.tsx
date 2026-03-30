@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useApiSearchDictionary } from '@/hooks/use-api-search-dictionary'
-import { DiscoverItem } from '@/pages/discover-page'
+import { Badge, Button, Heading, NoResults, Text } from '@/components/ui'
+import DiscoverItem from './components/discover-item'
 
 export default function DiscoverPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -24,7 +25,7 @@ export default function DiscoverPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="mb-6 text-xl font-semibold text-gray-100">Discover</h1>
+      <Heading level="h1" className="mb-6">Discover</Heading>
 
       <form onSubmit={handleSubmit} className="mb-8 flex gap-3">
         <input
@@ -35,28 +36,26 @@ export default function DiscoverPage() {
           className="flex-1 rounded-lg border border-gray-700 bg-gray-900 px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           autoFocus
         />
-        <button
+        <Button
           type="submit"
           disabled={loading}
-          className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-60"
+          color="primary"
         >
           {loading ? 'Searching…' : 'Search'}
-        </button>
+        </Button>
       </form>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
+        <Badge variant="error" className="mb-4">{error}</Badge>
       )}
 
       {results !== null && results.length === 0 && (
-        <p className="text-center text-gray-500">No results for "{query}"</p>
+        <NoResults message={`No results for "${query}"`} />
       )}
 
       {results && results.length > 0 && (
         <div className="space-y-3">
-          <p className="text-sm text-gray-500">{results.length} results</p>
+          <Text size="sm" color="muted">{results.length} results</Text>
           {results.map(entry => (
             <DiscoverItem key={entry.id} entry={entry} />
           ))}

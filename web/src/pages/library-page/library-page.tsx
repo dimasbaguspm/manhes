@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { BookOpen } from 'lucide-react'
-import { Icon } from '@/components'
+import { Icon } from '@/components/icon'
+import { Badge } from '@/components/ui/badge/badge'
+import { Button } from '@/components/ui/button/button'
+import { Text } from '@/components/ui/text/text'
 import { useApiMangaList } from '@/hooks/use-api-manga-list'
 import type { ListMangaParams } from '@/api/manga'
 import { Pagination } from '@/pages/library-page'
@@ -15,10 +18,10 @@ const STATE_LABEL: Record<string, string> = {
   uploading: 'Uploading',
 }
 
-const STATE_COLOR: Record<string, string> = {
-  available: 'bg-emerald-900 text-emerald-300',
-  fetching: 'bg-amber-900 text-amber-300',
-  uploading: 'bg-blue-900 text-blue-300',
+const STATE_BADGE_VARIANT: Record<string, 'success' | 'warning' | 'primary'> = {
+  available: 'success',
+  fetching: 'warning',
+  uploading: 'primary',
 }
 
 function LibraryItem({ manga }: { manga: DomainMangaSummary }) {
@@ -42,21 +45,24 @@ function LibraryItem({ manga }: { manga: DomainMangaSummary }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-semibold text-gray-100">{manga.title}</h3>
-          <span className={`flex-shrink-0 rounded px-2 py-0.5 text-xs font-medium ${STATE_COLOR[manga.state ?? ''] ?? 'bg-gray-800 text-gray-400'}`}>
+          <Badge
+            variant={STATE_BADGE_VARIANT[manga.state ?? ''] ?? 'default'}
+            size="sm"
+          >
             {STATE_LABEL[manga.state ?? ''] ?? manga.state}
-          </span>
+          </Badge>
         </div>
 
         {manga.description && (
-          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-gray-400">
+          <Text size="sm" color="muted" className="mt-1 line-clamp-2">
             {manga.description}
-          </p>
+          </Text>
         )}
 
         {manga.languages && manga.languages.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {manga.languages.map(l => (
-              <span key={l.lang ?? l.lang}>{l.lang?.toUpperCase() ?? l.lang}</span>
+              <Text key={l.lang ?? l.lang} size="xs" color="muted">{l.lang?.toUpperCase() ?? l.lang}</Text>
             ))}
           </div>
         )}
@@ -64,22 +70,19 @@ function LibraryItem({ manga }: { manga: DomainMangaSummary }) {
         {manga.genres && manga.genres.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {manga.genres.slice(0, 5).map(g => (
-              <span key={g} className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-500">
+              <Badge key={g} variant="default" size="sm">
                 {g}
-              </span>
+              </Badge>
             ))}
           </div>
         )}
 
         <div className="mt-3 flex items-center gap-3">
-          <Link
-            to={DEEP_LINKS.MANGA_DETAIL({ mangaId: manga.id ?? '' })}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500"
-          >
-            View
+          <Link to={DEEP_LINKS.MANGA_DETAIL({ mangaId: manga.id ?? '' })}>
+            <Button size="sm">View</Button>
           </Link>
           {manga.updated_at && (
-            <span className="text-xs text-gray-600">Updated {formatDate(manga.updated_at, DateFormat.ShortDateTime)}</span>
+            <Text size="xs" color="muted">Updated {formatDate(manga.updated_at, DateFormat.ShortDateTime)}</Text>
           )}
         </div>
       </div>
@@ -135,7 +138,7 @@ export default function LibraryPage() {
       </div>
 
       {data && (
-        <p className="mb-4 text-sm text-gray-500">{data.itemCount} manga</p>
+        <Text color="muted" className="mb-4">{data.itemCount} manga</Text>
       )}
 
       {loading && (

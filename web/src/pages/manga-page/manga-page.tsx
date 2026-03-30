@@ -4,7 +4,8 @@ import { useApiChapterList } from '@/hooks/use-api-chapter-list'
 import { useApiRefreshDictionary } from '@/hooks/use-api-refresh-dictionary'
 import { DEEP_LINKS } from '@/lib/deep-links'
 import { usePersistedState } from '@/hooks/use-persisted-state'
-import { CoverImage, MangaDetailHeader, StatusBadge, StateBadge, GenreBadge, LangTabs, LangProgressBar, ChaptersPanel, NoResults, ActionButtons } from '@/pages/manga-page'
+import { CoverImage, MangaDetailHeader, StatusBadge, StateBadge, GenreBadge, LangTabs, LangProgressBar, ChaptersPanel, ActionButtons } from '@/pages/manga-page'
+import { NoResults } from '@/components/ui'
 
 export default function MangaPage() {
   const { mangaId } = useParams<{ mangaId: string }>()
@@ -80,7 +81,7 @@ export default function MangaPage() {
     )
   }
 
-  if (error) return <NoResults message={error} error />
+  if (error) return <NoResults message={error} variant="error" />
   if (!data) return null
 
   const activeLangInfo = resolvedLang ? data.languages?.find(l => l.lang === resolvedLang) : null

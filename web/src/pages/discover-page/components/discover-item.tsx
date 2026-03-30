@@ -1,4 +1,5 @@
 import type { DomainDictionaryResponse } from '@/types'
+import { Heading, Text } from '@/components/ui'
 
 function DiscoverItem({ entry }: { entry: DomainDictionaryResponse }) {
   const chaptersByLang = entry.chapters_by_lang ?? {}
@@ -14,14 +15,14 @@ function DiscoverItem({ entry }: { entry: DomainDictionaryResponse }) {
         />
       )}
       <div className="min-w-0 flex-1">
-        <h3 className="font-medium text-gray-100">{entry.title}</h3>
-        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+        <Heading level="h3">{entry.title}</Heading>
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
           {entry.sources && Object.keys(entry.sources).length > 0 && (
-            <span>Sources: {Object.keys(entry.sources).join(', ')}</span>
+            <Text size="xs" color="muted">Sources: {Object.keys(entry.sources).join(', ')}</Text>
           )}
-          {totalChapters > 0 && <span>{totalChapters} total chapters</span>}
+          {totalChapters > 0 && <Text size="xs" color="muted">{totalChapters} total chapters</Text>}
           {Object.entries(chaptersByLang).map(([lang, count]) => (
-            <span key={lang}>{lang.toUpperCase()}: {count}</span>
+            <Text size="xs" color="muted" key={lang}>{lang.toUpperCase()}: {count}</Text>
           ))}
         </div>
       </div>
