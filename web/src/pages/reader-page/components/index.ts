@@ -1,3 +1,4 @@
+export { AutoScrollControls } from './auto-scroll-controls'
 export { ChapterNavFooter } from './chapter-nav-footer'
 export { InteractiveProvider, Ctx, type InteractiveCtx, useInteractive } from './interactive-provider'
 export { ReaderCanvas, type CanvasLoadingInfo } from './reader-canvas'

@@ -3,12 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { Icon } from '@/components/icon'
 import { useApiChapterRead } from '@/hooks/use-api-chapter-read'
+import { useChapterName } from '@/hooks/use-chapter-name'
 import { parseChapterIdFromUrl } from '@/lib/format-data'
 import { usePageAnchor, type CanvasPageLayout } from '@/hooks/use-page-anchor'
 import { useProgressSave } from '@/hooks/use-progress-save'
 import { DEEP_LINKS } from '@/lib/deep-links'
-import { InteractiveProvider, useInteractive, useReaderSettings, ReaderHeader, ReaderMenu, ReaderSettingsPanel, ReaderStrip, ReaderProgressBar, ReaderCanvas, type CanvasLoadingInfo, ChapterNavFooter, ShortcutsOverlay } from '@/pages/reader-page/components'
+import { InteractiveProvider, useInteractive, useReaderSettings, ReaderHeader, ReaderMenu, ReaderSettingsPanel, ReaderStrip, ReaderProgressBar, ReaderCanvas, type CanvasLoadingInfo, ChapterNavFooter, ShortcutsOverlay, AutoScrollControls } from '@/pages/reader-page/components'
 import { useAutoScroll } from '@/hooks/use-auto-scroll'
+import { useAutoScrollControls } from '@/hooks/use-auto-scroll-controls'
 
 type OverlayState = 'visible' | 'fade' | 'gone'
 
@@ -16,7 +18,9 @@ function ReaderContent() {
   const { chapterId } = useParams<{ chapterId: string }>()
   const navigate = useNavigate()
   const { data, loading, error } = useApiChapterRead(chapterId)
+  const { name: chapterName, loading: chapterNameLoading } = useChapterName(data?.manga_id, chapterId)
   const { settings, set, stripMaxWidthClass, bgClass } = useReaderSettings()
+  const { isActive: autoScrollActive, speed: autoScrollSpeed, toggle: toggleAutoScroll, cycleSpeed } = useAutoScrollControls()
   const {
     scrollPct,
     headerVisible,
@@ -91,7 +95,10 @@ function ReaderContent() {
     return () => { doubleTapHoldCallbackRef.current = null }
   }, [doubleTapHoldCallbackRef])
 
-  // Keyboard shortcuts: f = fullscreen, s = settings, / = shortcuts, Esc = close.
+  // Keyboard shortcuts: f = fullscreen, s = auto-scroll, / = shortcuts, Esc = close.
+  const toggleAutoScrollRef = useRef(toggleAutoScroll)
+  useEffect(() => { toggleAutoScrollRef.current = toggleAutoScroll }, [toggleAutoScroll])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName
@@ -104,7 +111,10 @@ function ReaderContent() {
           document.exitFullscreen?.()
         }
       }
-      if (e.key === 's' || e.key === 'S') setMenuOpen(v => !v)
+      if (e.key === 's' || e.key === 'S') {
+        e.preventDefault()
+        toggleAutoScrollRef.current()
+      }
       if (e.key === '/') {
         e.preventDefault()
         setShortcutsOpen(v => !v)
@@ -118,11 +128,11 @@ function ReaderContent() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const scrollRestoreOverlay = usePageAnchor(data, data?.manga_id, chapterId ?? '', containerRef, pageLayout)
+  usePageAnchor(data, data?.manga_id, chapterId ?? '', containerRef, pageLayout)
 
   useAutoScroll(
-    settings.autoScroll,
-    settings.autoScrollSpeed,
+    autoScrollActive,
+    autoScrollSpeed,
     isTouchingRef,
     () => set('autoScroll', false),
   )
@@ -155,18 +165,11 @@ function ReaderContent() {
         </div>
       )}
 
-      {/* Scroll-restore overlay */}
-      {scrollRestoreOverlay !== 'gone' && (
-        <div
-          className={`fixed inset-0 z-50 bg-gray-950 transition-opacity duration-300 ${
-            scrollRestoreOverlay === 'fade' ? 'opacity-0' : 'opacity-100'
-          }`}
-        />
-      )}
 
       <ReaderHeader
         visible={headerVisible}
-        chapter={data?.chapter_id ?? chapterId ?? ''}
+        chapter={chapterName ?? data?.chapter_id ?? chapterId ?? ''}
+        chapterNameLoading={chapterNameLoading}
         pageCount={data?.pages?.length ?? null}
         chaptersHref={chaptersHref}
         menuOpen={menuOpen}
@@ -232,6 +235,13 @@ function ReaderContent() {
         pct={scrollPct}
         showBar={settings.showProgress}
         showIndicator={settings.showPageIndicator}
+      />
+
+      <AutoScrollControls
+        isActive={autoScrollActive}
+        speed={autoScrollSpeed}
+        onToggle={toggleAutoScroll}
+        onCycleSpeed={cycleSpeed}
       />
 
     </div>
