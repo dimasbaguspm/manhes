@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useApiSearchDictionary } from '../../hooks/useApiSearchDictionary'
-import DiscoverItem from './components/DiscoverItem'
+import { useApiSearchDictionary } from '@/hooks/use-api-search-dictionary'
+import { DiscoverItem } from '@/pages/discover-page'
 
 export default function DiscoverPage() {
   const [searchParams, setSearchParams] = useSearchParams()

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { BookOpen } from 'lucide-react'
-import { Icon } from '../../components/Icon'
-import { useApiMangaList } from '../../hooks/useApiMangaList'
-import type { ListMangaParams } from '../../api/manga'
-import Pagination from './components/Pagination'
-import { DEEP_LINKS } from '../../lib/deepLinks'
-import { DateFormat, formatDate } from '../../lib/formatDate'
-import type { DomainMangaSummary } from '../../types'
+import { Icon } from '@/components'
+import { useApiMangaList } from '@/hooks/use-api-manga-list'
+import type { ListMangaParams } from '@/api/manga'
+import { Pagination } from '@/pages/library-page'
+import { DEEP_LINKS } from '@/lib/deep-links'
+import { DateFormat, formatDate } from '@/lib/format-date'
+import type { DomainMangaSummary } from '@/types'
 
 const STATE_LABEL: Record<string, string> = {
   available: 'Available',
@@ -177,7 +177,7 @@ export default function LibraryPage() {
             <Pagination
               page={data.pageNumber ?? 1}
               total={data.pageTotal ?? 1}
-              onChange={p => setFilter('page', p)}
+              onChange={(p: number) => setFilter('page', p)}
             />
           </div>
         </>

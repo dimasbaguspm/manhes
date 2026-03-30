@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { DomainMangaListResponse, DomainMangaDetailResponse, DomainChapterListResponse, DomainChapterReadResponse } from '../types'
+import type { DomainMangaListResponse, DomainMangaDetailResponse, DomainChapterListResponse, DomainChapterReadResponse } from '@/types'
 
 // Swagger params: id, q, genre, author, state, sortBy, sortOrder, page, pageSize
 export interface ListMangaParams {

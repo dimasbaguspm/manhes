@@ -1,17 +1,10 @@
 import { Link, useSearchParams, useParams } from 'react-router-dom'
-import { useApiMangaDetail } from '../../hooks/useApiMangaDetail'
-import { useApiChapterList } from '../../hooks/useApiChapterList'
-import { useApiRefreshDictionary } from '../../hooks/useApiRefreshDictionary'
-import { DEEP_LINKS } from '../../lib/deepLinks'
-import { usePersistedState } from '../../hooks/usePersistedState'
-import { CoverImage } from './components/CoverImage'
-import { MangaDetailHeader } from './components/Header'
-import { StatusBadge, StateBadge, GenreBadge } from './components/Badge'
-import { LangTabs } from './components/LangTabs'
-import { LangProgressBar } from './components/ProgressBar'
-import { ChaptersPanel } from './components/ChaptersPanel'
-import { NoResults } from './components/NoResults'
-import { ActionButtons } from './components/ActionButtons'
+import { useApiMangaDetail } from '@/hooks/use-api-manga-detail'
+import { useApiChapterList } from '@/hooks/use-api-chapter-list'
+import { useApiRefreshDictionary } from '@/hooks/use-api-refresh-dictionary'
+import { DEEP_LINKS } from '@/lib/deep-links'
+import { usePersistedState } from '@/hooks/use-persisted-state'
+import { CoverImage, MangaDetailHeader, StatusBadge, StateBadge, GenreBadge, LangTabs, LangProgressBar, ChaptersPanel, NoResults, ActionButtons } from '@/pages/manga-page'
 
 export default function MangaPage() {
   const { mangaId } = useParams<{ mangaId: string }>()
@@ -171,9 +164,9 @@ export default function MangaPage() {
                       .map(k => k.split('/')[2]),
                   )}
                   latestRead={latestRead[`${mangaId}/${resolvedLang}`]}
-                  getProgress={chapter => readProgress[`${mangaId}/${resolvedLang}/${chapter}`]}
+                  getProgress={(chapter: string) => readProgress[`${mangaId}/${resolvedLang}/${chapter}`]}
                   onToggleBookmark={toggleBookmark}
-                  onChapterClick={(chapterId) => markRead(chapterId)}
+                  onChapterClick={(chapterId: string) => markRead(chapterId)}
                 />
               )}
             </>

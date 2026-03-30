@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { DomainDictionaryResponse } from '../types'
+import type { DomainDictionaryResponse } from '@/types'
 
 export const dictionaryApi = {
   search(q: string) {
