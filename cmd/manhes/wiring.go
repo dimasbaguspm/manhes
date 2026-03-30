@@ -18,12 +18,16 @@ import (
 	"manga-engine/internal/infrastructure/eventbus"
 	infrahttp "manga-engine/internal/infrastructure/http"
 	"manga-engine/internal/infrastructure/persistence"
+	"manga-engine/internal/ui"
+
 	"manga-engine/internal/infrastructure/s3"
 	"manga-engine/internal/infrastructure/scraper"
 	"manga-engine/internal/infrastructure/scraper/atsu"
 	"manga-engine/internal/infrastructure/scraper/mangadex"
 	"manga-engine/internal/infrastructure/storage"
 	"manga-engine/internal/subscriber"
+
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 type Infra struct {
@@ -136,7 +140,7 @@ func (w *Wiring) StartSubscriptions() {
 func (w *Wiring) StartDaemons(ctx context.Context) {
 	log := w.Infra.Log
 
-	log.Info("[Core] starting daemons")
+	log.Info("[Core] starting daemons 2")
 	go w.IngestDaemon.Run(ctx)
 	log.Info("[Core] daemons started")
 }
@@ -154,6 +158,8 @@ func (w *Wiring) StartServer(ctx context.Context) error {
 	router.Use(infrahttp.StructuredLogger(w.Handlers.Log))
 	router.Use(middleware.Recoverer)
 
+	router.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+
 	h := &httpHandlers{Handlers: w.Handlers}
 
 	router.Route("/api/v1", func(r chi.Router) {
@@ -164,6 +170,8 @@ func (w *Wiring) StartServer(ctx context.Context) error {
 		r.Get("/dictionary", h.searchDictionary)
 		r.Post("/dictionary/refresh", h.refreshDictionary)
 	})
+
+	router.Handle("/*", ui.NewHandler())
 
 	srv := &http.Server{
 		Addr:         w.Infra.Cfg.ListenAddr,
