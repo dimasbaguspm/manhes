@@ -96,7 +96,7 @@ export function ReaderCanvas({ urls, containerRef, onLayout, onLoadingState }: R
     }
 
     const worker = new Worker(
-      new URL('../../workers/image-loader.worker.ts', import.meta.url),
+      new URL('../../../workers/image-loader.worker.ts', import.meta.url),
       { type: 'module' },
     )
 

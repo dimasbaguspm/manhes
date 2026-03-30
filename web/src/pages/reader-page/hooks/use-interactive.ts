@@ -1,5 +1,5 @@
 import { useContext } from 'react'
-import { Ctx, type InteractiveCtx } from '@/components/reader'
+import { Ctx, type InteractiveCtx } from '@/pages/reader-page/components'
 
 export function useInteractive(): InteractiveCtx {
   const ctx = useContext(Ctx)

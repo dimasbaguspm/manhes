@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { Toggle, Icon } from '@/components'
-import type { ReaderSettings } from '@/components/reader/use-reader-settings'
+import { Toggle } from '@/pages/reader-page/components/toggle'
+import { Icon } from '@/components/icon'
+import type { ReaderSettings } from '@/pages/reader-page/components/use-reader-settings'
 
 const STRIP_WIDTH_OPTIONS = [
   { label: 'Narrow', value: 'narrow' },

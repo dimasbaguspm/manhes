@@ -10,11 +10,14 @@
     "gen:types": "npx --yes swagger-typescript-api generate -p ../docs/manhes/swagger.json -o ./src/types -n index.ts --no-client"
   },
   "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "dayjs": "^1.11.20",
     "lucide-react": "^1.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^6.28.0",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

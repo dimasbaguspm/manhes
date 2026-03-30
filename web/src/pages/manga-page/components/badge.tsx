@@ -1,4 +1,4 @@
-import { Badge } from '@/components'
+import { Badge } from '@/components/ui'
 
 const STATUS_COLORS: Record<string, string> = {
   ongoing:   'bg-green-900 text-green-300',
