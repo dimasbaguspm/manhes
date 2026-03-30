@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Icon } from '@/components/icon'
 import { Badge } from '@/components/ui/badge/badge'
 import { Button } from '@/components/ui/button/button'
 import { Text } from '@/components/ui/text/text'
+import { NoResults } from '@/components/ui/no-results/no-results'
 import { useApiMangaList } from '@/hooks/use-api-manga-list'
 import type { ListMangaParams } from '@/api/manga'
-import { Pagination } from '@/pages/library-page'
 import { DEEP_LINKS } from '@/lib/deep-links'
 import { DateFormat, formatDate } from '@/lib/format-date'
 import type { DomainMangaSummary } from '@/types'
@@ -90,6 +90,34 @@ function LibraryItem({ manga }: { manga: DomainMangaSummary }) {
   )
 }
 
+function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
+  if (total <= 1) return null
+
+  return (
+    <div className="flex items-center justify-center gap-3">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onChange(page - 1)}
+        disabled={page <= 1}
+      >
+        <Icon as={ChevronLeft} size="small" className="mr-1 inline" /> Prev
+      </Button>
+      <Text color="muted">
+        {page} / {total}
+      </Text>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onChange(page + 1)}
+        disabled={page >= total}
+      >
+        Next <Icon as={ChevronRight} size="small" className="ml-1 inline" />
+      </Button>
+    </div>
+  )
+}
+
 const DEFAULT_FILTERS: ListMangaParams = {
   sortBy: 'title',
   page: 1,
@@ -157,9 +185,7 @@ export default function LibraryPage() {
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
+        <NoResults variant="error" message={error} />
       )}
 
       {data && data.items && data.items.length === 0 && (
