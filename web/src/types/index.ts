@@ -11,9 +11,11 @@
  */
 
 export interface DomainChapterItem {
-  chapter?: string;
+  id?: string;
+  name?: string;
+  order?: number;
   page_count?: number;
-  uploaded_at?: string;
+  updated_at?: string;
 }
 
 export interface DomainChapterListResponse {
@@ -23,12 +25,15 @@ export interface DomainChapterListResponse {
 }
 
 export interface DomainChapterReadResponse {
-  chapter?: string;
-  id?: string;
-  lang?: string;
+  chapter_id?: string;
+  manga_id?: string;
   next_chapter?: string;
   pages?: string[];
   prev_chapter?: string;
+}
+
+export interface DomainDictionaryRefreshRequest {
+  dictionaryId?: string;
 }
 
 export interface DomainDictionaryResponse {
@@ -36,22 +41,22 @@ export interface DomainDictionaryResponse {
   chapters_by_lang?: Record<string, number>;
   cover_url?: string;
   id?: string;
-  refreshed_at?: string;
   slug?: string;
   source_stats?: Record<string, DomainSourceStat>;
   sources?: Record<string, string>;
-  state?: string;
   title?: string;
+  updated_at?: string;
 }
 
 export interface DomainMangaDetailResponse {
   authors?: string[];
   cover_url?: string;
+  created_at?: string;
   description?: string;
+  dictionary_id?: string;
   genres?: string[];
   id?: string;
   languages?: DomainMangaLangResponse[];
-  sources?: Record<string, string>;
   state?: string;
   status?: string;
   title?: string;
@@ -59,11 +64,10 @@ export interface DomainMangaDetailResponse {
 }
 
 export interface DomainMangaLangResponse {
-  fetched_chapters?: number;
+  available_chapters?: number;
   lang?: string;
   latest_update?: string;
   total_chapters?: number;
-  uploaded_chapters?: number;
 }
 
 export interface DomainMangaListResponse {
@@ -76,12 +80,13 @@ export interface DomainMangaListResponse {
 
 export interface DomainMangaSummary {
   authors?: string[];
-  chapters_by_lang?: Record<string, number>;
   cover_url?: string;
+  created_at?: string;
   description?: string;
+  dictionary_id?: string;
   genres?: string[];
   id?: string;
-  languages?: string[];
+  languages?: DomainMangaLangResponse[];
   state?: string;
   status?: string;
   title?: string;
@@ -92,10 +97,6 @@ export interface DomainSourceStat {
   chapters_by_lang?: Record<string, number>;
   err?: string;
   fetched_at?: string;
-}
-
-export interface HandlerWatchlistRequest {
-  dictionaryId?: string;
 }
 
 export interface HttputilErrorResponse {

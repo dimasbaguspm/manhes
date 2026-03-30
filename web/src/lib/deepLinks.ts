@@ -17,9 +17,6 @@ export const DEEP_LINKS = {
   MANGA_DETAIL: ({ mangaId }: { mangaId: string }) =>
     `/manga/${mangaId}`,
 
-  MANGA_CHAPTERS: ({ mangaId, lang }: { mangaId: string; lang: string }) =>
-    `/manga/${mangaId}?tab=${lang}`,
-
-  MANGA_READER: ({ mangaId, lang, chapter }: { mangaId: string; lang: string; chapter: string }) =>
-    `/manga/${mangaId}/${lang}/read?chapter=${chapter}`,
+  MANGA_READER: ({ chapterId }: { chapterId: string }) =>
+    `/read/${encodeURIComponent(chapterId)}`,
 }

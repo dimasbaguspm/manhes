@@ -1,29 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useDictionaryList } from '../providers/DictionaryListProvider'
-import { watchlistApi } from '../api/watchlist'
-import type { AppDictionaryEntry } from '../types/app'
+import { useApiSearchDictionary } from '../hooks/useApiSearchDictionary'
+import type { DomainDictionaryResponse } from '../types'
 
-type AddState = 'idle' | 'loading' | 'done' | 'error'
-
-function DiscoverItem({ entry }: { entry: AppDictionaryEntry }) {
-  const [addState, setAddState] = useState<AddState>('idle')
-
-  async function handleAdd() {
-    setAddState('loading')
-    try {
-      await watchlistApi.add(entry.id)
-      setAddState('done')
-    } catch {
-      setAddState('error')
-    }
-  }
+function DiscoverItem({ entry }: { entry: DomainDictionaryResponse }) {
+  const chaptersByLang = entry.chapters_by_lang ?? {}
+  const totalChapters = Object.values(chaptersByLang).reduce((a, b) => a + b, 0)
 
   return (
     <div className="flex gap-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
-      {entry.coverUrl && (
+      {entry.cover_url && (
         <img
-          src={entry.coverUrl}
+          src={entry.cover_url}
           alt={entry.title}
           className="h-20 w-14 flex-shrink-0 rounded object-cover"
         />
@@ -31,31 +19,14 @@ function DiscoverItem({ entry }: { entry: AppDictionaryEntry }) {
       <div className="min-w-0 flex-1">
         <h3 className="font-medium text-gray-100">{entry.title}</h3>
         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-          {Object.keys(entry.sources).length > 0 && (
+          {entry.sources && Object.keys(entry.sources).length > 0 && (
             <span>Sources: {Object.keys(entry.sources).join(', ')}</span>
           )}
-          {entry.totalChapters > 0 && <span>{entry.totalChapters} total chapters</span>}
-          {Object.entries(entry.chaptersByLang).map(([lang, count]) => (
+          {totalChapters > 0 && <span>{totalChapters} total chapters</span>}
+          {Object.entries(chaptersByLang).map(([lang, count]) => (
             <span key={lang}>{lang.toUpperCase()}: {count}</span>
           ))}
         </div>
-      </div>
-      <div className="flex flex-shrink-0 items-start">
-        <button
-          onClick={handleAdd}
-          disabled={addState !== 'idle'}
-          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed ${
-            addState === 'done' ? 'bg-green-900 text-green-300'
-            : addState === 'error' ? 'bg-red-900 text-red-300'
-            : addState === 'loading' ? 'bg-gray-700 text-gray-400'
-            : 'bg-indigo-600 text-white hover:bg-indigo-500'
-          }`}
-        >
-          {addState === 'done' ? '✓ Added'
-            : addState === 'error' ? 'Failed'
-            : addState === 'loading' ? 'Adding…'
-            : '+ Library'}
-        </button>
       </div>
     </div>
   )
@@ -64,7 +35,7 @@ function DiscoverItem({ entry }: { entry: AppDictionaryEntry }) {
 export default function DiscoverPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
-  const { results, loading, error, search } = useDictionaryList()
+  const { results, loading, error, search } = useApiSearchDictionary()
 
   useEffect(() => {
     const q = searchParams.get('q')

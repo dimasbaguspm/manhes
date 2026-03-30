@@ -1,24 +1,33 @@
 import { api } from './client'
 import type { DomainMangaListResponse, DomainMangaDetailResponse, DomainChapterListResponse, DomainChapterReadResponse } from '../types'
 
+// Swagger params: id, q, genre, author, state, sortBy, sortOrder, page, pageSize
 export interface ListMangaParams {
-  title?: string
-  status?: string
-  state?: string
-  sortBy?: string
+  id?: string | string[]
+  q?: string
+  genre?: string | string[]
+  author?: string | string[]
+  state?: string | string[]
+  sortBy?: 'title' | 'updatedAt' | 'createdAt'
+  sortOrder?: 'asc' | 'desc'
   page?: number
   pageSize?: number
-  hideUnavailable?: boolean
+}
+
+function toQueryString(params: ListMangaParams): string {
+  const q = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === '') return
+    if (Array.isArray(v)) v.forEach(item => q.append(k, String(item)))
+    else q.set(k, String(v))
+  })
+  const s = q.toString()
+  return s ? `?${s}` : ''
 }
 
 export const mangaApi = {
   list(params: ListMangaParams = {}) {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '') q.set(k, String(v))
-    })
-    const qs = q.size ? `?${q.toString()}` : ''
-    return api.get<DomainMangaListResponse>(`/manga${qs}`)
+    return api.get<DomainMangaListResponse>(`/manga${toQueryString(params)}`)
   },
 
   get(mangaId: string) {
@@ -29,7 +38,8 @@ export const mangaApi = {
     return api.get<DomainChapterListResponse>(`/manga/${mangaId}/${lang}`)
   },
 
-  read(mangaId: string, lang: string, chapter: string) {
-    return api.get<DomainChapterReadResponse>(`/manga/${mangaId}/${lang}/read?chapter=${chapter}`)
+  // Swagger: GET /read/{chapterId}
+  read(chapterId: string) {
+    return api.get<DomainChapterReadResponse>(`/read/${encodeURIComponent(chapterId)}`)
   },
 }

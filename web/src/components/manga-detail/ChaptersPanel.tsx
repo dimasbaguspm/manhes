@@ -1,31 +1,31 @@
 import { Link } from 'react-router-dom'
 import { DEEP_LINKS } from '../../lib/deepLinks'
-import { useMangaChapters } from '../../providers/MangaChaptersProvider'
 import { BookmarkIcon } from '../reader/Icons'
 import { NoResults } from './NoResults'
+import type { DomainChapterListResponse } from '../../types'
 
 interface ChaptersPanelProps {
-  mangaId: string
-  lang: string
+  chapterData: DomainChapterListResponse | null
+  chapterLoading: boolean
+  chapterError: string | null
   bookmarkedSet: Set<string>
   latestRead: string | undefined
   getProgress: (chapter: string) => number | undefined
   onToggleBookmark: (chapter: string) => void
-  onChapterClick: (chapter: string) => void
+  onChapterClick: (chapterId: string, chapterName: string) => void
 }
 
 export function ChaptersPanel({
-  mangaId,
-  lang,
+  chapterData,
+  chapterLoading,
+  chapterError,
   bookmarkedSet,
   latestRead,
   getProgress,
   onToggleBookmark,
   onChapterClick,
 }: ChaptersPanelProps) {
-  const { data, loading, error } = useMangaChapters()
-
-  if (loading) {
+  if (chapterLoading) {
     return (
       <div className="space-y-1.5">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -35,26 +35,28 @@ export function ChaptersPanel({
     )
   }
 
-  if (error) return <NoResults message={error} error />
+  if (chapterError) return <NoResults message={chapterError} error />
 
-  if (!data?.chapters.length) {
+  const chapters = chapterData?.chapters ?? []
+  if (chapters.length === 0) {
     return <NoResults message="No chapters available yet." />
   }
 
   return (
     <div className="space-y-1.5">
-      {data.chapters.map(ch => {
-        const chStr = String(ch.chapter)
-        const isBookmarked = bookmarkedSet.has(chStr)
-        const isLatest = latestRead === chStr
-        const readPct = getProgress(chStr)
+      {chapters.map(ch => {
+        const chName = String(ch.name ?? ch.order ?? '0')
+        const chId = ch.id ?? ''
+        const isBookmarked = bookmarkedSet.has(chId)
+        const isLatest = latestRead === chId
+        const readPct = getProgress(chId)
         const hasProgress = readPct !== undefined && readPct > 0
 
         return (
-          <div key={chStr} className="flex items-center gap-2">
+          <div key={chId} className="flex items-center gap-2">
             <Link
-              to={DEEP_LINKS.MANGA_READER({ mangaId, lang, chapter: chStr })}
-              onClick={() => onChapterClick(chStr)}
+              to={DEEP_LINKS.MANGA_READER({ chapterId: chId })}
+              onClick={() => onChapterClick(chId, chName)}
               className={`relative flex min-w-0 flex-1 items-center justify-between overflow-hidden rounded-lg border bg-gray-900 px-4 py-3 transition hover:border-gray-600 hover:bg-gray-800 ${
                 isLatest ? 'border-indigo-700' : 'border-gray-800'
               }`}
@@ -68,7 +70,7 @@ export function ChaptersPanel({
 
               <div className="flex min-w-0 items-center gap-2">
                 <span className={`font-medium ${isLatest ? 'text-indigo-300' : 'text-gray-100'}`}>
-                  {chStr}
+                  {chName}
                 </span>
                 {isLatest && (
                   <span className="shrink-0 rounded-full bg-indigo-900 px-2 py-0.5 text-xs text-indigo-300">
@@ -83,15 +85,15 @@ export function ChaptersPanel({
                     {readPct! >= 100 ? 'Done' : `${readPct}%`}
                   </span>
                 )}
-                <span>{ch.pageCount} pgs</span>
+                <span>{ch.page_count ?? 0} pgs</span>
                 <span className="hidden sm:inline">
-                  {ch.uploadedAt ? new Date(ch.uploadedAt).toLocaleDateString() : '—'}
+                  {ch.updated_at ? new Date(ch.updated_at).toLocaleDateString() : '—'}
                 </span>
               </div>
             </Link>
 
             <button
-              onClick={() => onToggleBookmark(chStr)}
+              onClick={() => onToggleBookmark(chId)}
               aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark chapter'}
               className={`shrink-0 rounded-lg border p-2.5 transition ${
                 isBookmarked

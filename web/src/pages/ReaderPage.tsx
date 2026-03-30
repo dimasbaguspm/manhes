@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useMangaReader } from '../providers/MangaReaderDataProvider'
+import { useNavigate, useParams } from 'react-router-dom'
+import { useApiChapterRead } from '../hooks/useApiChapterRead'
+import { parseChapterIdFromUrl } from '../lib/formatData'
 import { usePageAnchor, type CanvasPageLayout } from '../hooks/usePageAnchor'
 import { useProgressSave } from '../hooks/useProgressSave'
 import { DEEP_LINKS } from '../lib/deepLinks'
@@ -17,10 +19,10 @@ import { ShortcutsOverlay } from '../components/reader/ShortcutsOverlay'
 
 type OverlayState = 'visible' | 'fade' | 'gone'
 
-// ── Inner content — requires InteractiveProvider in the tree ──────────────────
-
 function ReaderContent() {
-  const { data, loading, error, chapter, mangaId, lang, goNext, goPrev } = useMangaReader()
+  const { chapterId } = useParams<{ chapterId: string }>()
+  const navigate = useNavigate()
+  const { data, loading, error } = useApiChapterRead(chapterId)
   const { settings, set, stripMaxWidthClass, bgClass } = useReaderSettings()
   const {
     scrollPct,
@@ -39,24 +41,31 @@ function ReaderContent() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [pageLayout, setPageLayout] = useState<CanvasPageLayout[] | null>(null)
 
+  const goNext = useCallback(() => {
+    const next = parseChapterIdFromUrl(data?.next_chapter)
+    if (next) navigate(`/read/${encodeURIComponent(next)}`)
+  }, [data?.next_chapter, navigate])
+
+  const goPrev = useCallback(() => {
+    const prev = parseChapterIdFromUrl(data?.prev_chapter)
+    if (prev) navigate(`/read/${encodeURIComponent(prev)}`)
+  }, [data?.prev_chapter, navigate])
+
   // ── Canvas loading overlay ─────────────────────────────────────────────────
-  // Shown as a full-viewport dim screen while the worker fetches images.
-  // Transitions: visible → fade (opacity-0, 300 ms) → gone (unmounted).
   const [canvasOverlay, setCanvasOverlay] = useState<OverlayState>('gone')
   const [canvasLoadInfo, setCanvasLoadInfo] = useState({ loaded: 0, total: 0 })
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // When a new chapter's data arrives, show the overlay before the canvas mounts.
   const lastDataChapterRef = useRef<string | null>(null)
   useEffect(() => {
     if (!data) return
-    if (chapter !== lastDataChapterRef.current) {
-      lastDataChapterRef.current = chapter
+    if (chapterId !== lastDataChapterRef.current) {
+      lastDataChapterRef.current = chapterId ?? null
       if (fadeTimerRef.current !== null) clearTimeout(fadeTimerRef.current)
       setCanvasOverlay('visible')
       setCanvasLoadInfo({ loaded: 0, total: 0 })
     }
-  }, [data, chapter])
+  }, [data, chapterId])
 
   const handleCanvasLoadingState = useCallback((info: CanvasLoadingInfo) => {
     setCanvasLoadInfo({ loaded: info.loaded, total: info.total })
@@ -69,7 +78,6 @@ function ReaderContent() {
     }
   }, [])
 
-  // Clear the fade timer on unmount.
   useEffect(() => {
     return () => {
       if (fadeTimerRef.current !== null) clearTimeout(fadeTimerRef.current)
@@ -80,9 +88,9 @@ function ReaderContent() {
   // stale geometry while the new canvas is being drawn.
   useEffect(() => {
     setPageLayout(null)
-  }, [chapter])
+  }, [chapterId])
 
-  useProgressSave(mangaId, lang, chapter, scrollPct)
+  useProgressSave(data?.manga_id, chapterId, chapterId, scrollPct)
 
   // Double-tap-hold opens settings.
   useEffect(() => {
@@ -117,7 +125,7 @@ function ReaderContent() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const scrollRestoreOverlay = usePageAnchor(data, mangaId, chapter, containerRef, pageLayout)
+  const scrollRestoreOverlay = usePageAnchor(data, data?.manga_id, chapterId ?? '', containerRef, pageLayout)
 
   useAutoScroll(
     settings.autoScroll,
@@ -126,12 +134,17 @@ function ReaderContent() {
     () => set('autoScroll', false),
   )
 
-  const chaptersHref = DEEP_LINKS.MANGA_CHAPTERS({ mangaId: mangaId!, lang: lang! })
+  const chaptersHref = data?.manga_id
+    ? DEEP_LINKS.MANGA_DETAIL({ mangaId: data.manga_id })
+    : '/'
+
+  const prevDisabled = data?.prev_chapter == null
+  const nextDisabled = data?.next_chapter == null
 
   return (
     <div className={`min-h-screen ${bgClass}`}>
 
-      {/* Worker loading overlay — dim screen with centered progress while images load */}
+      {/* Worker loading overlay */}
       {canvasOverlay !== 'gone' && (
         <div
           className={`fixed inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-gray-950 transition-opacity duration-300 ${
@@ -149,7 +162,7 @@ function ReaderContent() {
         </div>
       )}
 
-      {/* Scroll-restore overlay — fades out once the target page is scrolled to */}
+      {/* Scroll-restore overlay */}
       {scrollRestoreOverlay !== 'gone' && (
         <div
           className={`fixed inset-0 z-50 bg-gray-950 transition-opacity duration-300 ${
@@ -160,15 +173,14 @@ function ReaderContent() {
 
       <ReaderHeader
         visible={headerVisible}
-        lang={lang!}
-        chapter={chapter}
-        pageCount={data?.pages.length ?? null}
+        chapter={data?.chapter_id ?? chapterId ?? ''}
+        pageCount={data?.pages?.length ?? null}
         chaptersHref={chaptersHref}
         menuOpen={menuOpen}
         onMenuToggle={() => setMenuOpen(o => !o)}
         onShortcutsToggle={() => setShortcutsOpen(o => !o)}
-        prevDisabled={data?.prevChapter == null}
-        nextDisabled={data?.nextChapter == null}
+        prevDisabled={prevDisabled}
+        nextDisabled={nextDisabled}
         onPrev={goPrev}
         onNext={goNext}
       />
@@ -179,8 +191,8 @@ function ReaderContent() {
           set={set}
           headerVisible={headerVisible}
           onHeaderToggle={() => setHeaderVisible(v => !v)}
-          prevDisabled={data?.prevChapter == null}
-          nextDisabled={data?.nextChapter == null}
+          prevDisabled={prevDisabled}
+          nextDisabled={nextDisabled}
           onPrev={goPrev}
           onNext={goNext}
         />
@@ -205,19 +217,18 @@ function ReaderContent() {
         ) : undefined}
         renderPages={data ? () => (
           <ReaderCanvas
-            key={chapter}
-            urls={data.pages}
+            key={chapterId}
+            urls={data.pages ?? []}
             containerRef={containerRef}
             onLayout={setPageLayout}
             onLoadingState={handleCanvasLoadingState}
           />
         ) : undefined}
-        // Footer is suppressed while the loading overlay is covering the screen.
         renderFooter={data && canvasOverlay === 'gone' ? () => (
           <ChapterNavFooter
             chaptersHref={chaptersHref}
-            prevDisabled={data.prevChapter == null}
-            nextDisabled={data.nextChapter == null}
+            prevDisabled={prevDisabled}
+            nextDisabled={nextDisabled}
             onPrev={goPrev}
             onNext={goNext}
           />
@@ -234,8 +245,6 @@ function ReaderContent() {
   )
 }
 
-// ── Page export — InteractiveProvider wraps the content tree ─────────────────
-
 export default function ReaderPage() {
   return (
     <InteractiveProvider>
@@ -243,8 +252,6 @@ export default function ReaderPage() {
     </InteractiveProvider>
   )
 }
-
-// ── Shared ────────────────────────────────────────────────────────────────────
 
 function SpinnerIcon({ className }: { className?: string }) {
   return (

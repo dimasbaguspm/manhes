@@ -1,5 +1,5 @@
 import { useState, useEffect, type RefObject } from 'react'
-import type { AppChapterRead } from '../types/app'
+import type { DomainChapterReadResponse } from '../types'
 import { fnv1a } from '../lib/hashCodec'
 import { throttle } from '../lib/throttle'
 
@@ -31,7 +31,7 @@ export type OverlayState = 'show' | 'fade' | 'gone'
  * of individual DOM element IDs.
  */
 export function usePageAnchor(
-  data: AppChapterRead | null,
+  data: DomainChapterReadResponse | null,
   mangaId: string | undefined,
   chapter: string,
   containerRef: RefObject<HTMLElement> | null,
@@ -57,7 +57,7 @@ export function usePageAnchor(
     const offsetMilli = dot !== -1 ? parseInt(raw.slice(dot + 1), 10) : 0
     const offset = isNaN(offsetMilli) ? 0 : offsetMilli / 1000
 
-    const pageIdx = data.pages.findIndex((_, i) => pageAnchor(mangaId, chapter, i + 1) === hashPart)
+    const pageIdx = data.pages?.findIndex((_, i) => pageAnchor(mangaId, chapter, i + 1) === hashPart) ?? -1
 
     if (pageIdx !== -1 && pageLayout[pageIdx]) {
       const t = setTimeout(() => {

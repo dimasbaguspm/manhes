@@ -1,38 +1,23 @@
 import { Button } from '../Button'
 import { formatDate, DateFormat } from '../../lib/formatDate'
 
-type ActionState = 'idle' | 'loading' | 'done' | 'error'
+type RefreshState = 'idle' | 'loading' | 'done' | 'error'
 
 interface ActionButtonsProps {
   state: string
-  addState: ActionState
-  onAddToWatchlist: () => void
-  refreshState: ActionState
+  refreshState: RefreshState
   onRefresh: () => void
   updatedAt: string
 }
 
 export function ActionButtons({
   state,
-  addState,
-  onAddToWatchlist,
   refreshState,
   onRefresh,
   updatedAt,
 }: ActionButtonsProps) {
   if (state === 'unavailable') {
-    return (
-      <Button
-        variant={addState === 'error' ? 'danger' : 'primary'}
-        disabled={addState !== 'idle'}
-        onClick={onAddToWatchlist}
-        className="mt-4"
-      >
-        {addState === 'error' ? 'Failed to add'
-          : addState === 'loading' ? 'Adding…'
-          : '+ Add to Library'}
-      </Button>
-    )
+    return null
   }
 
   return (

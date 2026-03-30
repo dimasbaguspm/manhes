@@ -6,7 +6,6 @@ const navBtn =
 
 interface ReaderHeaderProps {
   visible: boolean
-  lang: string
   chapter: string
   pageCount: number | null
   chaptersHref: string
@@ -21,7 +20,6 @@ interface ReaderHeaderProps {
 
 export function ReaderHeader({
   visible,
-  lang,
   chapter,
   pageCount,
   chaptersHref,
@@ -46,8 +44,7 @@ export function ReaderHeader({
         </Link>
 
         <div className="min-w-0 truncate text-center text-sm text-gray-300">
-          <span className="uppercase">{lang}</span>
-          {' — Ch. '}{chapter}
+          {'Ch. '}{chapter}
           {pageCount !== null && (
             <span className="text-gray-500"> · {pageCount} pgs</span>
           )}
