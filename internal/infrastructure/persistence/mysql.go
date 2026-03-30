@@ -138,29 +138,34 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 	}
 
 	// Build filter args and WHERE clause dynamically.
-	var args []interface{}
+	// filterArgs is used twice: once for CTE count query, once for main query.
+	var filterArgs []interface{}
 	where := "WHERE 1=1"
 
 	if dictIDVal != "" {
 		where += " AND m.dictionary_id = ?"
-		args = append(args, dictIDVal)
+		filterArgs = append(filterArgs, dictIDVal)
 	}
 	if filter.Q != "" {
 		where += " AND (m.title LIKE ? OR m.description LIKE ?)"
 		likeQ := "%" + filter.Q + "%"
-		args = append(args, likeQ, likeQ)
+		filterArgs = append(filterArgs, likeQ, likeQ)
 	}
 	if stateVal != "" {
 		where += " AND m.state = ?"
-		args = append(args, stateVal)
+		filterArgs = append(filterArgs, stateVal)
 	} else if len(filter.States) > 1 {
 		placeholders := make([]string, len(filter.States))
 		for i, s := range filter.States {
 			placeholders[i] = "?"
-			args = append(args, s)
+			filterArgs = append(filterArgs, s)
 		}
 		where += fmt.Sprintf(" AND m.state IN (%s)", strings.Join(placeholders, ","))
 	}
+
+	// Args: [filterArgs for CTE, filterArgs for main WHERE, pageSize, offset]
+	args := append(append([]interface{}{}, filterArgs...), filterArgs...)
+	args = append(args, pageSize, offset)
 
 	// CTE for total count, then paginated results.
 	query := fmt.Sprintf(`
@@ -175,8 +180,6 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 		ORDER BY %s %s
 		LIMIT ? OFFSET ?
 	`, where, where, orderCol, orderDir)
-
-	args = append(args, pageSize, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
