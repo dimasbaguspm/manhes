@@ -19,20 +19,8 @@ A self-hosted manga library. Manhes scrapes metadata and chapters from multiple 
 - **Multi-source ingestion** — scrapes in parallel, picks the best source per language by chapter count
 - **Event-driven pipeline** — an in-memory event bus decouples retrieval, file upload, and S3 storage
 - **Web reader** — vertical strip layout, auto-scroll, zoom, header auto-hide, progress bar
-- **Watchlist** — add a manga once, background daemons keep it up to date
+- **Background sync** — add a manga once, background daemon keeps it up to date automatically
 - **Single binary** — React SPA embedded into the Go binary via `//go:embed`
-
----
-
-## Stack
-
-| Layer | Technology |
-|---|---|
-| Backend | Go 1.25, Chi, MySQL 8 |
-| Event bus | In-memory synchronous bus (pkg/eventbus) |
-| Storage | MinIO (S3-compatible) |
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
-| API docs | Swagger / OpenAPI |
 
 ---
 
@@ -50,7 +38,7 @@ The fastest way to run manhes locally. No build step required.
 
 ```sh
 cp .env.example .env        # review and fill in your values
-make staging-up             # pulls nightly image + starts Redpanda + MinIO
+make staging-up             # pulls nightly image + starts MinIO
 ```
 
 The app will be available at `http://localhost:8080`.
@@ -79,31 +67,143 @@ make dev-reset      # wipe Docker volumes (including MySQL data) and library fil
 make prod-build     # → bin/manhes  (frontend embedded, no CGO)
 ```
 
-The binary serves the React SPA at `/` and the REST API at `/api/v1/`. Wire up Redpanda, MinIO, and a reverse proxy separately.
+The binary serves the React SPA at `/` and the REST API at `/api/v1/`. Wire up MinIO and a reverse proxy separately.
+
+---
+
+## Codebase Overview
+
+```
+manhes/
+├── cmd/manhes/           # Application entry point and dependency wiring
+│   ├── main.go           # main() — bootstraps everything
+│   ├── wiring.go         # Builds and connects all components
+│   └── resource.go        # Embedded React SPA (//go:embed)
+│
+├── config/               # Configuration from environment variables
+│   ├── config.go         # Main Config struct
+│   ├── database.go       # MySQL connection settings
+│   ├── s3.go             # S3/MinIO connection settings
+│   ├── sources.go        # Per-source (MangaDex, Atsu) settings
+│   ├── bus.go            # Event bus channel names
+│   └── env.go            # Env var parsing helpers
+│
+├── internal/
+│   ├── domain/           # Pure domain types — no external dependencies
+│   │   ├── manga.go      # Manga aggregate root
+│   │   ├── chapter.go    # Chapter entity
+│   │   ├── dictionary.go # DictionaryEntry (cross-source index)
+│   │   ├── events.go     # All event types (DictionaryUpdated, etc.)
+│   │   ├── ports.go      # Repository & object store interfaces
+│   │   ├── scraper.go    # Scraper port interface
+│   │   ├── subscriber.go # Subscriber interface definition
+│   │   └── handler.go    # Handler interfaces (HTTP layer contracts)
+│   │
+│   ├── handler/          # HTTP request handlers (Chi)
+│   │   ├── handler.go    # Handlers struct + constructor
+│   │   ├── manga.go      # ListManga, GetManga, GetChaptersByLang
+│   │   ├── chapter.go    # ReadChapter (with prev/next nav)
+│   │   ├── dictionary.go # Search, Refresh (triggers ingest)
+│   │   └── helpers.go    # View-model converters (toMangaSummary, etc.)
+│   │
+│   ├── subscriber/       # Event consumers — react to events from the bus
+│   │   ├── dictionary.go # DictionarySubscriber: handles DictionaryRefreshed
+│   │   ├── manga.go      # MangaSubscriber: handles DictionaryUpdated, ChapterUploaded, MangaAvailable
+│   │   ├── retrieval.go  # RetrievalSubscriber: handles IngestRequested
+│   │   └── file_upload.go# FileUploadSubscriber: handles ChaptersFound
+│   │
+│   ├── daemon/           # Background workers
+│   │   └── ingest.go     # IngestDaemon: periodic dictionary refresh + orphan cleanup
+│   │
+│   ├── ui/               # Embedded frontend (React SPA)
+│   │   └── ui.go        # Serves the embedded web app
+│   │
+│   └── infrastructure/  # Adapters implementing domain ports
+│       ├── persistence/ # MySQL adapter
+│       │   ├── mysql.go  # DB connection + implements domain.Repository
+│       │   └── queries/  # Raw SQL grouped by entity (manga, chapter, dictionary)
+│       ├── scraper/     # Source adapters (MangaDex, Atsu)
+│       │   ├── registry.go      # Priority-based scraper registry
+│       │   ├── circuit_breaker.go
+│       │   ├── mangadex/        # MangaDex scraper (priority 1)
+│       │   └── atsu/            # Atsu.moe scraper (priority 2)
+│       ├── storage/   # Disk storage (temp files before S3 upload)
+│       ├── s3/        # S3/MinIO adapter
+│       ├── eventbus/  # In-memory event bus (pub/sub via goroutines)
+│       ├── http/      # HTTP setup (router, middleware, CORS)
+│       └── downloader/ # HTTP client for downloading pages/covers
+│
+└── pkg/                 # Shared utilities (no internal deps)
+    ├── eventbus/        # Bus interface + InMemBus implementation
+    ├── log/             # Structured logging (slog wrapper)
+    ├── retry/           # Retry with backoff
+    ├── concurrent/      # concurrent.Collect (fan-in helper)
+    ├── circuitbreaker/ # Circuit breaker pattern
+    ├── httputil/        # HTTP client + response helpers
+    ├── reqctx/          # Request ID middleware
+    └── lifecycle/       # Startup/shutdown helpers
+```
+
+**Layer rules:**
+- `domain/` — pure Go, zero external imports. Defines interfaces (ports) that infrastructure implements.
+- `handler/` — HTTP only. Depends on domain interfaces, never on infrastructure directly.
+- `subscriber/` — event consumers. Depend on domain interfaces to do work.
+- `infrastructure/` — implements the interfaces defined in `domain/`. Never imported by `domain/`.
 
 ---
 
 ## Architecture
 
-The ingest pipeline is fully event-driven, orchestrated by an in-memory event bus:
+The entire ingest pipeline is event-driven. When you call `POST /api/v1/dictionary/refresh`, it kicks off a chain of async work — no blocking, no polling:
 
 ```
-IngestDaemon (periodic tick)
-  └─> DictionaryUpdated
-       └─> MangaService (upserts manga metadata)
-            └─> IngestRequested
-                 └─> RetrievalHandler (fetchFromSources + diff)
-                      └─> ChaptersFound
-                           └─> FileUploadService (download → ChapterDownloaded → S3 upload → ChapterUploaded → cleanup)
+POST /dictionary/refresh
+  │
+  ▼
+DictionaryRefreshed  ──► DictionarySubscriber updates source stats + best source
+                              │
+                              ▼
+                         DictionaryUpdated (TriggerIngest=true)
+                              │
+                              ▼
+                         MangaSubscriber upserts manga metadata, sets state=fetching
+                              │
+                              ▼
+                         IngestRequested
+                              │
+                              ▼
+                         RetrievalSubscriber fetches chapter list from all sources, diffs against DB
+                              │
+                              ▼
+                         ChaptersFound (only NEW chapters)
+                              │
+                              ▼
+                         FileUploadSubscriber downloads pages → uploads to S3 → cleans up disk
+                              │
+                              ▼
+                         MangaAvailable (state=available, manga readable)
 ```
 
-**Services:**
-- `IngestDaemon` — periodically refreshes manga dictionary entries and cleans up orphaned disk directories
-- `RetrievalHandler` — reacts to `IngestRequested`, fetches manga/chapter data from sources, publishes `ChaptersFound`
-- `FileUploadService` — reacts to `ChaptersFound`, downloads pages to disk, uploads to S3, publishes `ChapterDownloaded` and `ChapterUploaded`, cleans up local files
-- `MangaService` — reacts to `DictionaryUpdated`, upserts manga metadata, publishes `IngestRequested`
+### Subscribers (event consumers)
 
-**Events:** `DictionaryUpdated` → `IngestRequested` → `ChaptersFound` → `ChapterDownloaded` / `ChapterUploaded`
+| Subscriber | Listens to | What it does |
+|---|---|---|
+| `DictionarySubscriber` | `DictionaryRefreshed` | Re-searches all sources for a manga, updates `SourceStats` and `BestSource`, publishes `DictionaryUpdated` |
+| `MangaSubscriber` | `DictionaryUpdated` | Fetches manga metadata (title, cover, authors) from best source, upserts to DB, publishes `IngestRequested` |
+| `RetrievalSubscriber` | `IngestRequested` | Fetches chapter lists from all sources concurrently, diffs against stored chapters, publishes `ChaptersFound` for new ones |
+| `FileUploadSubscriber` | `ChaptersFound` | Downloads all pages for each new chapter to disk, uploads to S3, cleans up local files, publishes `ChapterUploaded`, then `MangaAvailable` when all done |
+| `MangaSubscriber` | `ChapterUploaded` / `MangaAvailable` | Updates manga state (`fetching` → `available`) |
+
+### Background daemon
+
+`IngestDaemon` runs every `DICTIONARY_REFRESH_INTERVAL` (default 4h):
+1. Picks manga entries that were previously ingested
+2. Calls `DictionaryService.Refresh()` for each — same flow as the manual refresh endpoint
+3. Cleans up any orphaned disk directories left behind after S3 migration
+
+### Event bus
+
+The bus (`pkg/eventbus`) is an **in-memory pub/sub** — no Kafka, no Redpanda, no external broker. Events are delivered via goroutines, so handlers run asynchronously. This keeps ops simple (single binary) while preserving the decoupling benefits of an event-driven architecture.
 
 ---
 
@@ -165,10 +265,10 @@ Swagger UI: `http://localhost:8080/swagger/index.html`
 ```
 GET    /api/v1/manga                          List catalog (paginated, filterable)
 GET    /api/v1/manga/{mangaId}                Manga detail
-GET    /api/v1/manga/{mangaId}/{lang}         Uploaded chapters for a language
-GET    /api/v1/manga/{mangaId}/{lang}/read    Chapter pages (with prev/next links)
-GET    /api/v1/dictionary?q=...              Search all sources + upsert into dictionary
-POST   /api/v1/watchlist                     Add manga to watchlist by dictionary ID
+GET    /api/v1/manga/{mangaId}/{lang}         Chapters for a language
+GET    /api/v1/read/{chapterId}              Chapter pages (with prev/next links)
+GET    /api/v1/dictionary?q=...               Search all sources, upsert into dictionary
+POST   /api/v1/dictionary/refresh             Refresh a dictionary entry (async re-fetch from all sources)
 ```
 
 ### Workflow
@@ -177,13 +277,13 @@ POST   /api/v1/watchlist                     Add manga to watchlist by dictionar
 # 1. Search for a manga — stores results in the dictionary
 curl "http://localhost:8080/api/v1/dictionary?q=tower+of+god"
 
-# 2. Add to watchlist — triggers ingestion in the background
-curl -X POST http://localhost:8080/api/v1/watchlist \
+# 2. Refresh dictionary entry — triggers ingestion in the background
+curl -X POST http://localhost:8080/api/v1/dictionary/refresh \
   -H 'Content-Type: application/json' \
-  -d '{"dictionaryId": "<uuid>"}'
+  -d '{"id": "<dictionary-uuid>"}'
 
 # 3. Read once state becomes "available"
-curl "http://localhost:8080/api/v1/manga/<mangaId>/en/read?chapter=1"
+curl "http://localhost:8080/api/v1/read/<chapterId>"
 ```
 
 ---
@@ -191,7 +291,7 @@ curl "http://localhost:8080/api/v1/manga/<mangaId>/en/read?chapter=1"
 ## Adding a new source
 
 1. Create `internal/infrastructure/scraper/{name}/adapter.go` implementing `domain.Scraper` (and optionally `domain.Searcher`)
-2. Register it in `buildScraperRegistry` in `cmd/manhes/main.go` with a priority value
+2. Register it in `BuildScraperRegistry` in `cmd/manhes/wiring.go` with a priority value (lower = higher priority)
 3. Add `BaseURL` / `RateLimit` fields to `config/config.go` and `.env.example`
 
 ---
