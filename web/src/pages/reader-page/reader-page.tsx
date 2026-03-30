@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { Loader2 } from 'lucide-react'
+import { Icon } from '../../components/Icon'
 import { useApiChapterRead } from '../../hooks/useApiChapterRead'
 import { parseChapterIdFromUrl } from '../../lib/formatData'
 import { usePageAnchor, type CanvasPageLayout } from '../../hooks/usePageAnchor'
@@ -152,7 +154,7 @@ function ReaderContent() {
             canvasOverlay === 'fade' ? 'pointer-events-none opacity-0' : 'opacity-100'
           }`}
         >
-          <SpinnerIcon className="h-7 w-7 animate-spin text-indigo-500" />
+          <Icon as={Loader2} size="large" className="animate-spin text-indigo-500" />
           <p className="text-sm text-gray-500">
             {canvasLoadInfo.total > 0
               ? canvasLoadInfo.loaded > 0
@@ -254,15 +256,3 @@ export default function ReaderPage() {
   )
 }
 
-function SpinnerIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-      />
-    </svg>
-  )
-}

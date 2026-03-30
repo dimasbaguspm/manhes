@@ -1,4 +1,6 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Toggle } from '../../../components/reader/Toggle'
+import { Icon } from '../../../components/Icon'
 import type { ReaderSettings } from '../hooks/useReaderSettings'
 
 const STRIP_WIDTH_OPTIONS = [
@@ -115,10 +117,10 @@ export function ReaderSettingsPanel({
       {/* Chapter navigation shown only inside the mobile sheet */}
       <section className="flex gap-2 pb-2 md:hidden">
         <button onClick={onPrev} disabled={prevDisabled} className={`flex-1 py-2 ${navBtn}`}>
-          ← Prev chapter
+          <Icon as={ChevronLeft} size="small" className="mr-1 inline" /> Prev chapter
         </button>
         <button onClick={onNext} disabled={nextDisabled} className={`flex-1 py-2 ${navBtn}`}>
-          Next chapter →
+          Next chapter <Icon as={ChevronRight} size="small" className="ml-1 inline" />
         </button>
       </section>
 

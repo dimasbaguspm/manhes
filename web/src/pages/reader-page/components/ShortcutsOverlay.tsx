@@ -1,3 +1,6 @@
+import { X } from 'lucide-react'
+import { Icon } from '../../../components/Icon'
+
 interface ShortcutsOverlayProps {
   open: boolean
   onClose: () => void
@@ -35,7 +38,7 @@ export function ShortcutsOverlay({ open, onClose }: ShortcutsOverlayProps) {
             aria-label="Close shortcuts"
             className="rounded p-0.5 text-gray-600 transition hover:text-gray-300"
           >
-            <CloseIcon />
+            <Icon as={X} size="small" />
           </button>
         </div>
 
@@ -70,13 +73,5 @@ export function ShortcutsOverlay({ open, onClose }: ShortcutsOverlayProps) {
         </div>
       </div>
     </>
-  )
-}
-
-function CloseIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-    </svg>
   )
 }

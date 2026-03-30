@@ -1,3 +1,6 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Icon } from '../../../components/Icon'
+
 interface Props {
   page: number
   total: number
@@ -14,7 +17,7 @@ export default function Pagination({ page, total, onChange }: Props) {
         disabled={page <= 1}
         className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-1.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
       >
-        ← Prev
+        <Icon as={ChevronLeft} size="small" className="mr-1 inline" /> Prev
       </button>
       <span className="text-sm text-gray-500">
         {page} / {total}
@@ -24,7 +27,7 @@ export default function Pagination({ page, total, onChange }: Props) {
         disabled={page >= total}
         className="rounded-lg border border-gray-700 bg-gray-900 px-4 py-1.5 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
       >
-        Next →
+        Next <Icon as={ChevronRight} size="small" className="ml-1 inline" />
       </button>
     </div>
   )

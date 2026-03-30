@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { DEEP_LINKS } from '../../../lib/deepLinks'
-import { BookmarkIcon } from '../../../components/reader/Icons'
+import { formatDate, DateFormat } from '../../../lib/formatDate'
+import { Bookmark } from 'lucide-react'
+import { Icon } from '../../../components/Icon'
 import { NoResults } from './NoResults'
 import type { DomainChapterListResponse } from '../../../types'
 
@@ -87,7 +89,7 @@ export function ChaptersPanel({
                 )}
                 <span>{ch.page_count ?? 0} pgs</span>
                 <span className="hidden sm:inline">
-                  {ch.updated_at ? new Date(ch.updated_at).toLocaleDateString() : '—'}
+                  {ch.updated_at ? formatDate(ch.updated_at, DateFormat.ShortDate) : '—'}
                 </span>
               </div>
             </Link>
@@ -101,7 +103,7 @@ export function ChaptersPanel({
                   : 'border-gray-700 bg-gray-900 text-gray-600 hover:border-gray-600 hover:text-gray-400'
               }`}
             >
-              <BookmarkIcon className="h-4 w-4" filled={isBookmarked} />
+              <Icon as={Bookmark} size="small" fill={isBookmarked ? 'currentColor' : 'none'} />
             </button>
           </div>
         )

@@ -1,4 +1,5 @@
-import { HeartIcon } from '../../../components/reader/Icons'
+import { Heart } from 'lucide-react'
+import { Icon } from '../../../components/Icon'
 
 interface MangaDetailHeaderProps {
   title: string
@@ -19,7 +20,7 @@ export function MangaDetailHeader({ title, authors, isFavorite, onToggleFavorite
             isFavorite ? 'text-red-400 hover:text-red-300' : 'text-gray-600 hover:text-gray-400'
           }`}
         >
-          <HeartIcon className="h-5 w-5" filled={isFavorite} />
+          <Icon as={Heart} fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
       </div>
 

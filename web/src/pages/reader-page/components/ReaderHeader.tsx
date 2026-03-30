@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, GearIcon, KeyboardIcon } from '../../../components/reader/Icons'
+import { ChevronLeft, ChevronRight, Keyboard, Settings } from 'lucide-react'
+import { Icon } from '../../../components/Icon'
 
 const navBtn =
   'inline-flex items-center gap-1 rounded border border-gray-700 px-3 py-1 text-xs text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
@@ -39,7 +40,7 @@ export function ReaderHeader({
     >
       <div className="flex items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/95 px-4 py-3 backdrop-blur">
         <Link to={chaptersHref} className="inline-flex shrink-0 items-center gap-1 text-sm text-gray-400 transition hover:text-white">
-          <ChevronLeft className="h-4 w-4" />
+          <Icon as={ChevronLeft} size="small" />
           <span>Chapters</span>
         </Link>
 
@@ -53,10 +54,10 @@ export function ReaderHeader({
         <div className="flex shrink-0 items-center gap-2">
           <div className="hidden items-center gap-2 md:flex">
             <button onClick={onPrev} disabled={prevDisabled} className={navBtn}>
-              <ChevronLeft className="h-3.5 w-3.5" /> Prev
+              <Icon as={ChevronLeft} size="small" /> Prev
             </button>
             <button onClick={onNext} disabled={nextDisabled} className={navBtn}>
-              Next <ChevronRight className="h-3.5 w-3.5" />
+              Next <Icon as={ChevronRight} size="small" />
             </button>
           </div>
 
@@ -66,7 +67,7 @@ export function ReaderHeader({
             title="Keyboard shortcuts (/)"
             className={navBtn}
           >
-            <KeyboardIcon />
+            <Icon as={Keyboard} />
           </button>
 
           <button
@@ -74,7 +75,7 @@ export function ReaderHeader({
             aria-label="Reader settings"
             className={`${navBtn} ${menuOpen ? 'border-indigo-600 text-indigo-400' : ''}`}
           >
-            <GearIcon />
+            <Icon as={Settings} />
           </button>
         </div>
       </div>

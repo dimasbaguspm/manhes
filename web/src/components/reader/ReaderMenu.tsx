@@ -1,3 +1,5 @@
+import { X } from 'lucide-react'
+import { Icon } from '../Icon'
 import type { ReactNode } from 'react'
 
 interface ReaderMenuProps {
@@ -45,7 +47,7 @@ export function ReaderMenu({ open, onClose, children }: ReaderMenuProps) {
               aria-label="Close settings"
               className="rounded p-0.5 text-gray-600 transition hover:text-gray-300"
             >
-              <CloseIcon />
+              <Icon as={X} size="small" />
             </button>
           </div>
           {children}
@@ -60,13 +62,5 @@ function DragHandle() {
     <div className="flex justify-center pt-3 pb-1">
       <div className="h-1 w-10 rounded-full bg-gray-700" />
     </div>
-  )
-}
-
-function CloseIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-    </svg>
   )
 }

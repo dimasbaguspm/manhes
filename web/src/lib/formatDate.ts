@@ -1,3 +1,10 @@
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+import updateLocale from 'dayjs/plugin/updateLocale'
+
+dayjs.extend(relativeTime)
+dayjs.extend(updateLocale)
+
 export enum DateFormat {
   /** "Mar 26, 2026" */
   ShortDate,
@@ -7,10 +14,10 @@ export enum DateFormat {
   TimeOnly,
 }
 
-const FORMAT_OPTIONS: Record<DateFormat, Intl.DateTimeFormatOptions> = {
-  [DateFormat.ShortDate]:     { dateStyle: 'medium' },
-  [DateFormat.ShortDateTime]: { dateStyle: 'medium', timeStyle: 'short' },
-  [DateFormat.TimeOnly]:      { timeStyle: 'short' },
+const FORMAT_MAP: Record<DateFormat, string> = {
+  [DateFormat.ShortDate]:     'MMM D, YYYY',
+  [DateFormat.ShortDateTime]: 'MMM D, YYYY, HH:mm',
+  [DateFormat.TimeOnly]:      'HH:mm',
 }
 
 export function formatDate(
@@ -19,8 +26,7 @@ export function formatDate(
 ): string {
   if (!value) return ''
   try {
-    const date = value instanceof Date ? value : new Date(value)
-    return new Intl.DateTimeFormat(undefined, FORMAT_OPTIONS[fmt]).format(date)
+    return dayjs(value).format(FORMAT_MAP[fmt])
   } catch {
     return ''
   }

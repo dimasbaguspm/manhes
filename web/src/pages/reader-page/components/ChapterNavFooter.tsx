@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { ChevronLeft, ChevronRight } from '../../../components/reader/Icons'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Icon } from '../../../components/Icon'
 
 interface ChapterNavFooterProps {
   chaptersHref: string
@@ -26,7 +27,7 @@ export function ChapterNavFooter({
         disabled={prevDisabled}
         className={`${navBtn} px-3 sm:px-5`}
       >
-        <ChevronLeft className="h-4 w-4 shrink-0" />
+        <Icon as={ChevronLeft} size="small" className="shrink-0" />
         <span className="hidden sm:inline">Previous</span>
         <span className="sm:hidden">Prev</span>
       </button>
@@ -43,7 +44,7 @@ export function ChapterNavFooter({
       >
         <span className="hidden sm:inline">Next</span>
         <span className="sm:hidden">Next</span>
-        <ChevronRight className="h-4 w-4 shrink-0" />
+        <Icon as={ChevronRight} size="small" className="shrink-0" />
       </button>
     </div>
   )
