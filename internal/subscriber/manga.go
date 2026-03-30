@@ -113,7 +113,10 @@ func (s *MangaSubscriber) HandleDictionaryUpdated(ctx context.Context, e domain.
 		manga.ID = mangaID
 		manga.DictionaryID = entry.ID
 		manga.CoverURL = entry.CoverURL
-		manga.State = domain.StateFetching
+		// Only transition to StateFetching when TriggerIngest is true (dictionary/refresh).
+		if e.TriggerIngest {
+			manga.State = domain.StateFetching
+		}
 
 		if err := s.repo.UpsertManga(ctx, *manga); err != nil {
 			s.log.Error("[Manga Subscriber]: UpsertManga failed", "mangaID", mangaID, "dictionaryID", entry.ID, "err", err)
@@ -136,7 +139,10 @@ func (s *MangaSubscriber) HandleDictionaryUpdated(ctx context.Context, e domain.
 		m.ID = mangaID
 		m.DictionaryID = entry.ID
 		m.CoverURL = entry.CoverURL
-		m.State = domain.StateFetching
+		// Only transition to StateFetching when TriggerIngest is true.
+		if e.TriggerIngest {
+			m.State = domain.StateFetching
+		}
 		if err := s.repo.UpsertManga(ctx, m); err != nil {
 			s.log.Error("[Manga Subscriber]: fallback UpsertManga failed", "mangaID", mangaID, "err", err)
 		} else {
@@ -145,8 +151,8 @@ func (s *MangaSubscriber) HandleDictionaryUpdated(ctx context.Context, e domain.
 		}
 	}
 
-	// If TriggerIngest, publish ChaptersFound so the ingest pipeline fetches and downloads
-	// chapters from sources.
+	// Only publish ChaptersFound when TriggerIngest is true (dictionary/refresh).
+	// For discovery search (TriggerIngest=false), upsert is done but no ingest pipeline.
 	if e.TriggerIngest {
 		s.log.Info("[Manga Subscriber]: publishing ChaptersFound",
 			"dictionaryID", entry.ID,
