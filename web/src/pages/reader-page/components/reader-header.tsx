@@ -6,6 +6,7 @@ import { Button, ButtonIcon } from '@/components/ui'
 interface ReaderHeaderProps {
   visible: boolean
   chapter: string
+  chapterNameLoading?: boolean
   pageCount: number | null
   chaptersHref: string
   menuOpen: boolean
@@ -20,6 +21,7 @@ interface ReaderHeaderProps {
 export function ReaderHeader({
   visible,
   chapter,
+  chapterNameLoading,
   pageCount,
   chaptersHref,
   menuOpen,
@@ -43,9 +45,15 @@ export function ReaderHeader({
         </Link>
 
         <div className="min-w-0 truncate text-center text-sm text-gray-300">
-          {'Ch. '}{chapter}
-          {pageCount !== null && (
-            <span className="text-gray-500"> · {pageCount} pgs</span>
+          {chapterNameLoading ? (
+            <span className="text-gray-500">Loading…</span>
+          ) : (
+            <>
+              Chapter {chapter}
+              {pageCount !== null && (
+                <span className="text-gray-500"> · {pageCount} pgs</span>
+              )}
+            </>
           )}
         </div>
 

@@ -9,7 +9,7 @@ interface ShortcutsOverlayProps {
 
 const KEYBOARD_SHORTCUTS = [
   { keys: ['f'], description: 'Toggle fullscreen' },
-  { keys: ['s'], description: 'Open / close settings' },
+  { keys: ['s'], description: 'Start / pause auto-scroll' },
   { keys: ['/'], description: 'Show keyboard shortcuts' },
   { keys: ['Esc'], description: 'Close any open panel' },
 ]
