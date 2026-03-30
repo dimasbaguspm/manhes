@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
-import { DEEP_LINKS } from '../../lib/deepLinks'
-import { BookmarkIcon } from '../reader/Icons'
+import { DEEP_LINKS } from '../../../lib/deepLinks'
+import { BookmarkIcon } from '../../../components/reader/Icons'
 import { NoResults } from './NoResults'
-import type { DomainChapterListResponse } from '../../types'
+import type { DomainChapterListResponse } from '../../../types'
 
 interface ChaptersPanelProps {
   chapterData: DomainChapterListResponse | null

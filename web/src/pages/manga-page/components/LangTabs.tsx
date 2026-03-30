@@ -1,4 +1,4 @@
-import type { DomainMangaLangResponse } from '../../types'
+import type { DomainMangaLangResponse } from '../../../types'
 
 interface LangTabsProps {
   langs: DomainMangaLangResponse[]

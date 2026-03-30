@@ -1,5 +1,5 @@
-import { Button } from '../Button'
-import { formatDate, DateFormat } from '../../lib/formatDate'
+import { Button } from '../../../components/Button'
+import { formatDate, DateFormat } from '../../../lib/formatDate'
 
 type RefreshState = 'idle' | 'loading' | 'done' | 'error'
 

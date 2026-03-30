@@ -1,4 +1,4 @@
-import { HeartIcon } from '../reader/Icons'
+import { HeartIcon } from '../../../components/reader/Icons'
 
 interface MangaDetailHeaderProps {
   title: string

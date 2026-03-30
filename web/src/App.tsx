@@ -1,9 +1,9 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
-import LibraryPage from './pages/LibraryPage'
-import DiscoverPage from './pages/DiscoverPage'
-import MangaPage from './pages/MangaPage'
-import ReaderPage from './pages/ReaderPage'
+import LibraryPage from './pages/library-page/library-page'
+import DiscoverPage from './pages/discover-page/discover-page'
+import MangaPage from './pages/manga-page/manga-page'
+import ReaderPage from './pages/reader-page/reader-page'
 
 export default function App() {
   return (
