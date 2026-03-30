@@ -12,12 +12,15 @@ export enum DateFormat {
   ShortDateTime,
   /** "08:42" */
   TimeOnly,
+  /** "2 hours ago" */
+  Relative,
 }
 
 const FORMAT_MAP: Record<DateFormat, string> = {
   [DateFormat.ShortDate]:     'MMM D, YYYY',
   [DateFormat.ShortDateTime]: 'MMM D, YYYY, HH:mm',
   [DateFormat.TimeOnly]:      'HH:mm',
+  [DateFormat.Relative]:      '',
 }
 
 export function formatDate(
@@ -26,6 +29,9 @@ export function formatDate(
 ): string {
   if (!value) return ''
   try {
+    if (fmt === DateFormat.Relative) {
+      return dayjs(value).fromNow()
+    }
     return dayjs(value).format(FORMAT_MAP[fmt])
   } catch {
     return ''
