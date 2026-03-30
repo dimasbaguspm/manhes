@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -112,7 +113,7 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 		sortOrder = "asc"
 	}
 
-	stateVal := ""
+	var stateVal string
 	if len(filter.States) == 1 {
 		stateVal = filter.States[0]
 	}
@@ -152,6 +153,13 @@ func (r *MySQLRepository) ListManga(ctx context.Context, filter domain.MangaFilt
 	if stateVal != "" {
 		where += " AND m.state = ?"
 		args = append(args, stateVal)
+	} else if len(filter.States) > 1 {
+		placeholders := make([]string, len(filter.States))
+		for i, s := range filter.States {
+			placeholders[i] = "?"
+			args = append(args, s)
+		}
+		where += fmt.Sprintf(" AND m.state IN (%s)", strings.Join(placeholders, ","))
 	}
 
 	// CTE for total count, then paginated results.
