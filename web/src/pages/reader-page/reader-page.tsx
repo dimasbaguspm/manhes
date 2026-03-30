@@ -1,16 +1,15 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
 import { Icon } from '@/components/icon'
 import { useApiChapterRead } from '@/hooks/use-api-chapter-read'
+import { useAutoScroll } from '@/hooks/use-auto-scroll'
 import { useChapterName } from '@/hooks/use-chapter-name'
-import { parseChapterIdFromUrl } from '@/lib/format-data'
 import { usePageAnchor, type CanvasPageLayout } from '@/hooks/use-page-anchor'
 import { useProgressSave } from '@/hooks/use-progress-save'
 import { DEEP_LINKS } from '@/lib/deep-links'
-import { InteractiveProvider, useInteractive, useReaderSettings, ReaderHeader, ReaderMenu, ReaderSettingsPanel, ReaderStrip, ReaderProgressBar, ReaderCanvas, type CanvasLoadingInfo, ChapterNavFooter, ShortcutsOverlay, AutoScrollControls } from '@/pages/reader-page/components'
-import { useAutoScroll } from '@/hooks/use-auto-scroll'
-import { useAutoScrollControls } from '@/hooks/use-auto-scroll-controls'
+import { parseChapterIdFromUrl } from '@/lib/format-data'
+import { AutoScrollControls, ChapterNavFooter, InteractiveProvider, ReaderCanvas, ReaderHeader, ReaderMenu, ReaderProgressBar, ReaderSettingsPanel, ReaderStrip, ShortcutsOverlay, useInteractive, useReaderSettings, type CanvasLoadingInfo } from '@/pages/reader-page/components'
+import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 
 type OverlayState = 'visible' | 'fade' | 'gone'
 
@@ -19,8 +18,7 @@ function ReaderContent() {
   const navigate = useNavigate()
   const { data, loading, error } = useApiChapterRead(chapterId)
   const { name: chapterName, loading: chapterNameLoading } = useChapterName(data?.manga_id, chapterId)
-  const { settings, set, stripMaxWidthClass, bgClass } = useReaderSettings()
-  const { isActive: autoScrollActive, speed: autoScrollSpeed, toggle: toggleAutoScroll, cycleSpeed } = useAutoScrollControls()
+  const { settings, set, stripMaxWidthClass, bgClass, isActive: autoScrollActive, speed: autoScrollSpeed, toggle: toggleAutoScroll, cycleSpeed } = useReaderSettings()
   const {
     scrollPct,
     headerVisible,
@@ -112,6 +110,10 @@ function ReaderContent() {
         }
       }
       if (e.key === 's' || e.key === 'S') {
+        e.preventDefault()
+        setMenuOpen(true)
+      }
+      if (e.key === 'p' || e.key === 'P') {
         e.preventDefault()
         toggleAutoScrollRef.current()
       }
@@ -238,10 +240,8 @@ function ReaderContent() {
       />
 
       <AutoScrollControls
-        isActive={autoScrollActive}
         speed={autoScrollSpeed}
-        onToggle={toggleAutoScroll}
-        onCycleSpeed={cycleSpeed}
+        onCycle={cycleSpeed}
       />
 
     </div>

@@ -1,4 +1,5 @@
 import { usePersistedState } from '@/hooks/use-persisted-state'
+import { useCallback } from 'react'
 
 export interface ReaderSettings {
   stripWidth: string
@@ -28,6 +29,20 @@ export function useReaderSettings() {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
+  const toggle = useCallback(() => {
+    set('autoScroll', !settings.autoScroll)
+  }, [settings.autoScroll, set])
+
+  const cycleSpeed = useCallback(() => {
+    const next = settings.autoScrollSpeed >= 4 ? 0 : settings.autoScrollSpeed + 1
+    set('autoScrollSpeed', next)
+    if (next === 0) {
+      set('autoScroll', false)
+    } else {
+      set('autoScroll', true)
+    }
+  }, [settings.autoScrollSpeed, set])
+
   const stripMaxWidthClass =
     settings.stripWidth === 'narrow' ? 'max-w-lg' :
     settings.stripWidth === 'wide'   ? 'max-w-5xl' :
@@ -39,5 +54,14 @@ export function useReaderSettings() {
     settings.bgColor === 'white' ? 'bg-white' :
     'bg-gray-950'
 
-  return { settings, set, stripMaxWidthClass, bgClass }
+  return {
+    settings,
+    set,
+    stripMaxWidthClass,
+    bgClass,
+    isActive: settings.autoScroll,
+    speed: settings.autoScrollSpeed,
+    toggle,
+    cycleSpeed,
+  }
 }
