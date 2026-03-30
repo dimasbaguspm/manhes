@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Toggle } from '@/pages/reader-page/components/toggle'
 import { Icon } from '@/components/icon'
 import { Button } from '@/components/ui'
@@ -17,7 +18,7 @@ const BG_COLOR_OPTIONS = [
   { label: 'White', value: 'white', bg: 'bg-white',    text: 'text-gray-900' },
 ]
 
-const AUTO_SCROLL_LABELS = ['', 'Slow', 'Medium', 'Fast', 'Faster', 'Turbo']
+const AUTO_SCROLL_LABELS = ['Off', 'Slow', 'Medium', 'Fast', 'Turbo']
 
 interface ReaderSettingsPanelProps {
   settings: ReaderSettings
@@ -40,6 +41,22 @@ export function ReaderSettingsPanel({
   onPrev,
   onNext,
 }: ReaderSettingsPanelProps) {
+  const [isFullscreen, setIsFullscreen] = useState(() => !!document.fullscreenElement)
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.()
+    } else {
+      document.documentElement.requestFullscreen?.()
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5 p-4">
 
@@ -94,7 +111,7 @@ export function ReaderSettingsPanel({
             <input
               type="range"
               min={1}
-              max={5}
+              max={4}
               value={settings.autoScrollSpeed}
               onChange={e => set('autoScrollSpeed', parseInt(e.target.value))}
               className="w-full accent-indigo-500"
@@ -105,10 +122,10 @@ export function ReaderSettingsPanel({
 
       <section>
         <button
-          onClick={() => document.documentElement.requestFullscreen?.()}
+          onClick={toggleFullscreen}
           className="w-full rounded border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 transition hover:border-gray-500 hover:text-white"
         >
-          Enter fullscreen
+          {isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
         </button>
       </section>
 
