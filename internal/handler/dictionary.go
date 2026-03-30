@@ -26,7 +26,19 @@ func (h *Handlers) Search(ctx context.Context, query string) ([]domain.Dictionar
 
 	hits := h.searchAllSources(ctx, query)
 
-	entries := h.buildEntries(hits)
+	existingIDs := make(map[string]string, len(hits))
+	for slug := range hits {
+		entry, found, err := h.Repo.GetDictionaryBySlug(ctx, slug)
+		if err != nil {
+			h.Log.Warn("search: GetDictionaryBySlug failed", "slug", slug, "err", err)
+			continue
+		}
+		if found {
+			existingIDs[slug] = entry.ID
+		}
+	}
+
+	entries := h.buildEntries(hits, existingIDs)
 	if err := h.Repo.UpsertDictionaryBatch(ctx, entries); err != nil {
 		return nil, err
 	}
@@ -302,12 +314,16 @@ func extOrDefault(url string) string {
 	return ".jpg"
 }
 
-func (h *Handlers) buildEntries(hits map[string]*searchHit) []domain.DictionaryEntry {
+func (h *Handlers) buildEntries(hits map[string]*searchHit, existingIDs map[string]string) []domain.DictionaryEntry {
 	entries := make([]domain.DictionaryEntry, 0, len(hits))
 	now := time.Now()
 	for _, hit := range hits {
+		id := uuid.New().String()
+		if existingID, ok := existingIDs[hit.slug]; ok {
+			id = existingID
+		}
 		entries = append(entries, domain.DictionaryEntry{
-			ID:          uuid.New().String(),
+			ID:          id,
 			Slug:        hit.slug,
 			Title:       hit.title,
 			Sources:     hit.sources,
