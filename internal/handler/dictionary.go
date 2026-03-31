@@ -21,28 +21,61 @@ type searchHit struct {
 	sourceStats map[string]domain.SourceStat
 }
 
+type existingEntry struct {
+	ID        string
+	CoverURL  string
+	CreatedAt time.Time
+}
+
 func (h *Handlers) Search(ctx context.Context, query string) ([]domain.DictionaryEntry, error) {
 	h.Log.Info("[DictionaryService] Search: started", "query", query)
 
 	hits := h.searchAllSources(ctx, query)
 
-	existingIDs := make(map[string]string, len(hits))
+	existing := make(map[string]existingEntry, len(hits))
+	newSlugs := make([]string, 0, len(hits))
 	for slug := range hits {
 		entry, found, err := h.Repo.GetDictionaryBySlug(ctx, slug)
 		if err != nil {
 			h.Log.Warn("search: GetDictionaryBySlug failed", "slug", slug, "err", err)
+			newSlugs = append(newSlugs, slug)
 			continue
 		}
 		if found {
-			existingIDs[slug] = entry.ID
+			existing[slug] = existingEntry{
+				ID:        entry.ID,
+				CoverURL:  entry.CoverURL,
+				CreatedAt: entry.CreatedAt,
+			}
+		} else {
+			newSlugs = append(newSlugs, slug)
 		}
 	}
 
-	entries := h.buildEntries(hits, existingIDs)
+	entries := h.buildEntries(hits, existing)
 	if err := h.Repo.UpsertDictionaryBatch(ctx, entries); err != nil {
 		return nil, err
 	}
 	h.logBatchUpsert(entries)
+
+	ordered := h.Registry.Ordered()
+	slugIdx := make(map[string]int, len(entries))
+	for i, e := range entries {
+		slugIdx[e.Slug] = i
+	}
+	for _, slug := range newSlugs {
+		idx, ok := slugIdx[slug]
+		if !ok {
+			continue
+		}
+		coverURL := h.fetchCover(ctx, &entries[idx], ordered)
+		if coverURL != "" {
+			entries[idx].CoverURL = coverURL
+			if err := h.Repo.UpsertDictionary(ctx, entries[idx]); err != nil {
+				h.Log.Warn("search: update cover", "id", entries[idx].ID, "err", err)
+			}
+		}
+	}
 
 	for _, e := range entries {
 		if err := h.Bus.Publish(ctx, h.Cfg.Bus.DictionaryUpdated, domain.DictionaryUpdated{
@@ -314,13 +347,17 @@ func extOrDefault(url string) string {
 	return ".jpg"
 }
 
-func (h *Handlers) buildEntries(hits map[string]*searchHit, existingIDs map[string]string) []domain.DictionaryEntry {
+func (h *Handlers) buildEntries(hits map[string]*searchHit, existing map[string]existingEntry) []domain.DictionaryEntry {
 	entries := make([]domain.DictionaryEntry, 0, len(hits))
 	now := time.Now()
 	for _, hit := range hits {
 		id := uuid.New().String()
-		if existingID, ok := existingIDs[hit.slug]; ok {
-			id = existingID
+		coverURL := ""
+		createdAt := now
+		if ex, ok := existing[hit.slug]; ok {
+			id = ex.ID
+			coverURL = ex.CoverURL
+			createdAt = ex.CreatedAt
 		}
 		entries = append(entries, domain.DictionaryEntry{
 			ID:          id,
@@ -329,9 +366,9 @@ func (h *Handlers) buildEntries(hits map[string]*searchHit, existingIDs map[stri
 			Sources:     hit.sources,
 			SourceStats: hit.sourceStats,
 			BestSource:  map[string]string{},
-			CoverURL:    "",
+			CoverURL:    coverURL,
 			UpdatedAt:   &now,
-			CreatedAt:   now,
+			CreatedAt:   createdAt,
 		})
 	}
 	return entries
