@@ -54,10 +54,13 @@ func (d *IngestDaemon) Run(ctx context.Context) {
 	}
 }
 
-// refreshMangaEntries lists all manga and refreshes only the dictionary entries
-// that have been ingested (i.e., have a corresponding manga entry).
+// refreshMangaEntries lists manga with state "available" or "fetching" and
+// refreshes their corresponding dictionary entries.
 func (d *IngestDaemon) refreshMangaEntries(ctx context.Context) {
-	page, err := d.repo.ListManga(ctx, domain.MangaFilter{PageSize: 10_000})
+	page, err := d.repo.ListManga(ctx, domain.MangaFilter{
+		PageSize: 10_000,
+		States:   []string{string(domain.StateAvailable), string(domain.StateFetching)},
+	})
 	if err != nil {
 		d.log.Error("ingest daemon: list manga", "err", err)
 		return
