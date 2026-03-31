@@ -119,7 +119,7 @@ export default function LibraryPage() {
 
       {data && data.items && data.items.length > 0 && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6">
             {data.items.map(manga => (
               <MangaCard key={manga.id} manga={manga} />
             ))}
