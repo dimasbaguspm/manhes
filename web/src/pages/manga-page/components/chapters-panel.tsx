@@ -1,32 +1,26 @@
-import { Link } from 'react-router-dom'
+import { Badge, NoResults } from '@/components/ui'
 import { DEEP_LINKS } from '@/lib/deep-links'
-import { formatDate, DateFormat } from '@/lib/format-date'
-import { Bookmark } from 'lucide-react'
-import { Icon } from '@/components'
-import { Badge, Button } from '@/components/ui'
-import { NoResults } from '@/components/ui'
-import type { DomainChapterListResponse } from '@/types'
+import { DateFormat, formatDate } from '@/lib/format-date'
+import type { DomainChapterListResponse, DomainTrackerResponse } from '@/types'
+import { Check } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 interface ChaptersPanelProps {
   chapterData: DomainChapterListResponse | null
   chapterLoading: boolean
   chapterError: string | null
-  bookmarkedSet: Set<string>
   latestRead: string | undefined
-  getProgress: (chapter: string) => number | undefined
-  onToggleBookmark: (chapter: string) => void
-  onChapterClick: (chapterId: string, chapterName: string) => void
+  trackers?: DomainTrackerResponse[]
+  onUpsertTracker?: (chapterId: string, isRead: boolean) => void
 }
 
 export function ChaptersPanel({
   chapterData,
   chapterLoading,
   chapterError,
-  bookmarkedSet,
   latestRead,
-  getProgress,
-  onToggleBookmark,
-  onChapterClick,
+  trackers,
+  onUpsertTracker,
 }: ChaptersPanelProps) {
   if (chapterLoading) {
     return (
@@ -45,66 +39,56 @@ export function ChaptersPanel({
     return <NoResults message="No chapters available yet." />
   }
 
+  // Build tracker lookup by chapterId
+  const trackerByChapter = new Map<string, DomainTrackerResponse>()
+  trackers?.forEach(t => {
+    if (t.chapter_id) trackerByChapter.set(t.chapter_id, t)
+  })
+
   return (
     <div className="space-y-1.5">
       {chapters.map(ch => {
         const chName = String(ch.name ?? ch.order ?? '0')
         const chId = ch.id ?? ''
-        const isBookmarked = bookmarkedSet.has(chId)
         const isLatest = latestRead === chId
-        const readPct = getProgress(chId)
-        const hasProgress = readPct !== undefined && readPct > 0
+        const tracker = trackerByChapter.get(chId)
+        const isRead = tracker?.is_read ?? false
+        const lastReadAt = tracker?.updated_at
 
         return (
-          <div key={chId} className="flex items-center gap-2">
-            <Link
-              to={DEEP_LINKS.MANGA_READER({ chapterId: chId })}
-              onClick={() => onChapterClick(chId, chName)}
-              className={`relative flex min-w-0 flex-1 items-center justify-between overflow-hidden rounded-lg border bg-gray-900 px-4 py-3 transition hover:border-gray-600 hover:bg-gray-800 ${
-                isLatest ? 'border-indigo-700' : 'border-gray-800'
-              }`}
-            >
-              {hasProgress && (
-                <div
-                  className="pointer-events-none absolute bottom-0 left-0 h-0.5 bg-indigo-500/50"
-                  style={{ width: `${readPct}%` }}
-                />
-              )}
-
-              <div className="flex min-w-0 items-center gap-2">
-                <span className={`font-medium ${isLatest ? 'text-indigo-300' : 'text-gray-100'}`}>
-                  {chName}
+          <Link
+            key={chId}
+            to={DEEP_LINKS.MANGA_READER({ chapterId: chId })}
+            onClick={() => {
+              if (onUpsertTracker) onUpsertTracker(chId, true)
+            }}
+            className={`flex items-center justify-between overflow-hidden rounded-lg border bg-gray-900 px-4 py-3 transition hover:border-gray-600 hover:bg-gray-800 ${
+              isLatest ? 'border-indigo-700' : 'border-gray-800'
+            }`}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              {isRead && (
+                <span className="text-emerald-500 shrink-0">
+                  <Check size={14} />
                 </span>
-                {isLatest && (
-                  <Badge variant="primary" size="sm">
-                    Last read
-                  </Badge>
-                )}
-              </div>
+              )}
+              <span className={`font-medium ${isLatest ? 'text-indigo-300' : isRead ? 'text-gray-400' : 'text-gray-100'}`}>
+                {chName}
+              </span>
+              {isLatest && (
+                <Badge variant="primary" size="sm">
+                  Last read
+                </Badge>
+              )}
+            </div>
 
-              <div className="ml-4 flex shrink-0 items-center gap-3 text-xs text-gray-500">
-                {hasProgress && (
-                  <span className={readPct! >= 100 ? 'text-emerald-500' : 'text-indigo-400'}>
-                    {readPct! >= 100 ? 'Done' : `${readPct}%`}
-                  </span>
-                )}
-                <span>{ch.page_count ?? 0} pgs</span>
-                <span className="hidden sm:inline">
+            <div className="flex shrink-0 items-center gap-3 text-xs text-gray-500">
+                <span className="hidden sm:inline text-gray-600">
                   {ch.updated_at ? formatDate(ch.updated_at, DateFormat.ShortDate) : '—'}
                 </span>
-              </div>
-            </Link>
-
-            <Button
-              variant={isBookmarked ? 'danger' : 'ghost'}
-              color={isBookmarked ? 'danger' : 'muted'}
-              size="sm"
-              onClick={() => onToggleBookmark(chId)}
-              aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark chapter'}
-            >
-              <Icon as={Bookmark} size="small" fill={isBookmarked ? 'currentColor' : 'none'} />
-            </Button>
-          </div>
+              <span>{ch.page_count ?? 0} pgs</span>
+            </div>
+          </Link>
         )
       })}
     </div>

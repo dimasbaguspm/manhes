@@ -326,3 +326,96 @@ func parseStringArray(vals []string) []string {
 	}
 	return result
 }
+
+// upsertTracker HTTP handler: PUT /api/v1/tracker
+//
+// @Summary     Upsert a tracker entry
+// @Description Creates or updates a reading tracker entry. Metadata is fully replaced on each call.
+// @Tags        tracker
+// @Accept      json
+// @Produce     json
+// @Param       body  body  domain.UpsertTrackerRequest  true  "Tracker data"
+// @Success     200  {object}  domain.TrackerResponse
+// @Failure     400  {object}  httputil.ErrorResponse
+// @Failure     500  {object}  httputil.ErrorResponse
+// @Router      /tracker [put]
+func (h *httpHandlers) upsertTracker(w http.ResponseWriter, r *http.Request) {
+	var req domain.UpsertTrackerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.BadRequest(w, "invalid request body", err)
+		return
+	}
+	if req.MangaID == "" || req.ChapterID == "" {
+		httputil.BadRequest(w, "manga_id and chapter_id are required", nil)
+		return
+	}
+
+	tracker := domain.Tracker{
+		ID:        req.ID,
+		MangaID:   req.MangaID,
+		ChapterID: req.ChapterID,
+		IsRead:    req.IsRead,
+		Metadata:  req.Metadata,
+	}
+
+	if err := h.Repo.UpsertTracker(r.Context(), tracker); err != nil {
+		h.internalError(w, r, "upsert tracker", err)
+		return
+	}
+
+	// Fetch the updated tracker to return fresh timestamps
+	result, found, err := h.Repo.GetTracker(r.Context(), req.MangaID, req.ChapterID)
+	if err != nil {
+		h.internalError(w, r, "upsert tracker", err)
+		return
+	}
+	if !found {
+		httputil.InternalError(w, nil)
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, domain.TrackerResponse{
+		ID:        result.ID,
+		MangaID:   result.MangaID,
+		ChapterID: result.ChapterID,
+		IsRead:    result.IsRead,
+		Metadata:  string(result.Metadata),
+		UpdatedAt: result.UpdatedAt,
+		CreatedAt: result.CreatedAt,
+	})
+}
+
+// getTrackersByManga HTTP handler: GET /api/v1/tracker/{mangaId}
+//
+// @Summary     List trackers for a manga
+// @Description Returns all tracker entries for a specific manga.
+// @Tags        tracker
+// @Produce     json
+// @Param       mangaId  path  string  true  "Manga UUID"
+// @Success     200  {array}  domain.TrackerResponse
+// @Failure     500  {object}  httputil.ErrorResponse
+// @Router      /tracker/{mangaId} [get]
+func (h *httpHandlers) getTrackersByManga(w http.ResponseWriter, r *http.Request) {
+	mangaID := chi.URLParam(r, "mangaId")
+
+	results, err := h.Repo.GetTrackersByManga(r.Context(), mangaID)
+	if err != nil {
+		h.internalError(w, r, "get trackers by manga", err)
+		return
+	}
+
+	trackers := make([]domain.TrackerResponse, 0, len(results))
+	for _, t := range results {
+		trackers = append(trackers, domain.TrackerResponse{
+			ID:        t.ID,
+			MangaID:   t.MangaID,
+			ChapterID: t.ChapterID,
+			IsRead:    t.IsRead,
+			Metadata:  string(t.Metadata),
+			UpdatedAt: t.UpdatedAt,
+			CreatedAt: t.CreatedAt,
+		})
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, trackers)
+}

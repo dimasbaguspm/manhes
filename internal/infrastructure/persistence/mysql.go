@@ -858,3 +858,85 @@ func (r *MySQLRepository) UpdateMangaCover(ctx context.Context, mangaID, coverUR
 	_, err := r.db.ExecContext(ctx, "UPDATE manga SET cover_url = ? WHERE id = ?", coverURL, mangaID)
 	return err
 }
+
+// Tracker methods
+
+func (r *MySQLRepository) UpsertTracker(ctx context.Context, t domain.Tracker) error {
+	metadata := t.Metadata
+	if metadata == nil {
+		metadata = []byte("{}")
+	}
+	id := t.ID
+	if id == "" {
+		id = uuid.New().String()
+	}
+	return r.q.UpsertTracker(ctx, queries.UpsertTrackerParams{
+		ID:        id,
+		MangaID:   t.MangaID,
+		ChapterID: t.ChapterID,
+		IsRead:    t.IsRead,
+		Metadata:  metadata,
+	})
+}
+
+func (r *MySQLRepository) GetTracker(ctx context.Context, mangaID, chapterID string) (domain.Tracker, bool, error) {
+	row, err := r.q.GetTracker(ctx, queries.GetTrackerParams{
+		MangaID:   mangaID,
+		ChapterID: chapterID,
+	})
+	if err == sql.ErrNoRows {
+		return domain.Tracker{}, false, nil
+	}
+	if err != nil {
+		return domain.Tracker{}, false, err
+	}
+	return domain.Tracker{
+		ID:        row.ID,
+		MangaID:   row.MangaID,
+		ChapterID: row.ChapterID,
+		IsRead:    row.IsRead,
+		Metadata:  row.Metadata,
+		UpdatedAt: row.UpdatedAt,
+		CreatedAt: row.CreatedAt,
+	}, true, nil
+}
+
+func (r *MySQLRepository) GetTrackersByManga(ctx context.Context, mangaID string) ([]domain.Tracker, error) {
+	rows, err := r.q.GetTrackersByManga(ctx, mangaID)
+	if err != nil {
+		return nil, err
+	}
+	trackers := make([]domain.Tracker, 0, len(rows))
+	for _, row := range rows {
+		trackers = append(trackers, domain.Tracker{
+			ID:        row.ID,
+			MangaID:   row.MangaID,
+			ChapterID: row.ChapterID,
+			IsRead:    row.IsRead,
+			Metadata:  row.Metadata,
+			UpdatedAt: row.UpdatedAt,
+			CreatedAt: row.CreatedAt,
+		})
+	}
+	return trackers, nil
+}
+
+func (r *MySQLRepository) ListTracker(ctx context.Context) ([]domain.Tracker, error) {
+	rows, err := r.q.ListTracker(ctx)
+	if err != nil {
+		return nil, err
+	}
+	trackers := make([]domain.Tracker, 0, len(rows))
+	for _, row := range rows {
+		trackers = append(trackers, domain.Tracker{
+			ID:        row.ID,
+			MangaID:   row.MangaID,
+			ChapterID: row.ChapterID,
+			IsRead:    row.IsRead,
+			Metadata:  row.Metadata,
+			UpdatedAt: row.UpdatedAt,
+			CreatedAt: row.CreatedAt,
+		})
+	}
+	return trackers, nil
+}

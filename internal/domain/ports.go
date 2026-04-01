@@ -45,6 +45,12 @@ type Repository interface {
 	// Manga (cover)
 	UpdateMangaCover(ctx context.Context, mangaID, coverURL string) error
 
+	// Tracker
+	UpsertTracker(ctx context.Context, t Tracker) error
+	GetTracker(ctx context.Context, mangaID, chapterID string) (Tracker, bool, error)
+	GetTrackersByManga(ctx context.Context, mangaID string) ([]Tracker, error)
+	ListTracker(ctx context.Context) ([]Tracker, error)
+
 	Close() error
 }
 

@@ -6,6 +6,7 @@ import { usePageAnchor, type CanvasPageLayout } from '@/hooks/use-page-anchor'
 import { useProgressSave } from '@/hooks/use-progress-save'
 import { DEEP_LINKS } from '@/lib/deep-links'
 import { parseChapterIdFromUrl } from '@/lib/format-data'
+import { mangaApi } from '@/api/manga'
 import { AutoScrollControls, ChapterNavFooter, InteractiveProvider, ReaderCanvas, ReaderHeader, ReaderMenu, ReaderProgressBar, ReaderSettingsPanel, ReaderStrip, ShortcutsOverlay, useInteractive, useReaderSettings, type CanvasLoadingInfo } from '@/pages/reader-page/components'
 import { Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -45,6 +46,18 @@ function ReaderContent() {
     const prev = parseChapterIdFromUrl(data?.prev_chapter)
     if (prev) navigate(`/read/${encodeURIComponent(prev)}`)
   }, [data?.prev_chapter, navigate])
+
+  // Upsert tracker when chapter loads
+  useEffect(() => {
+    if (!data?.manga_id || !chapterId) return
+    mangaApi.upsertTracker({
+      manga_id: data.manga_id,
+      chapter_id: chapterId,
+      is_read: true,
+    }).catch((err: unknown) => {
+      console.error('Failed to upsert tracker:', err)
+    })
+  }, [data?.manga_id, chapterId])
 
   // ── Canvas loading overlay ─────────────────────────────────────────────────
   const [canvasOverlay, setCanvasOverlay] = useState<OverlayState>('gone')

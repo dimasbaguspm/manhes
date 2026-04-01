@@ -47,3 +47,13 @@ type Manga struct {
 	UpdatedAt    time.Time
 	CreatedAt    time.Time
 }
+
+type Tracker struct {
+	ID        string
+	MangaID   string
+	ChapterID string
+	IsRead    bool
+	Metadata  json.RawMessage
+	UpdatedAt time.Time
+	CreatedAt time.Time
+}

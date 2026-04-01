@@ -178,6 +178,26 @@ definitions:
       fetched_at:
         type: string
     type: object
+  domain.TrackerResponse:
+    properties:
+      chapter_id:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      is_read:
+        type: boolean
+      manga_id:
+        type: string
+      metadata:
+        description: JSON string, use json.RawMessage on the domain Tracker
+        type: string
+      updated_at:
+        type: string
+    type: object
+  domain.UpsertTrackerRequest:
+    type: object
   httputil.ErrorResponse:
     properties:
       code:
@@ -413,6 +433,62 @@ paths:
       summary: Get chapter pages
       tags:
       - manga
+  /tracker:
+    put:
+      consumes:
+      - application/json
+      description: Creates or updates a reading tracker entry. Metadata is fully replaced
+        on each call.
+      parameters:
+      - description: Tracker data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/domain.UpsertTrackerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.TrackerResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: Upsert a tracker entry
+      tags:
+      - tracker
+  /tracker/{mangaId}:
+    get:
+      description: Returns all tracker entries for a specific manga.
+      parameters:
+      - description: Manga UUID
+        in: path
+        name: mangaId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.TrackerResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httputil.ErrorResponse'
+      summary: List trackers for a manga
+      tags:
+      - tracker
 produces:
 - application/json
 swagger: "2.0"

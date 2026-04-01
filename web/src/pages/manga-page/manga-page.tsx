@@ -2,58 +2,46 @@ import { Link, useSearchParams, useParams } from 'react-router-dom'
 import { useApiMangaDetail } from '@/hooks/use-api-manga-detail'
 import { useApiChapterList } from '@/hooks/use-api-chapter-list'
 import { useApiRefreshDictionary } from '@/hooks/use-api-refresh-dictionary'
+import { useApiTrackers } from '@/hooks/use-api-tracker'
+import { mangaApi } from '@/api/manga'
 import { DEEP_LINKS } from '@/lib/deep-links'
-import { usePersistedState } from '@/hooks/use-persisted-state'
 import { CoverImage, MangaDetailHeader, StatusBadge, StateBadge, GenreBadge, LangTabs, LangProgressBar, ChaptersPanel, ActionButtons } from '@/pages/manga-page'
 import { NoResults } from '@/components/ui'
+import type { DomainTrackerResponse } from '@/types'
 
 export default function MangaPage() {
   const { mangaId } = useParams<{ mangaId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [favorites, setFavorites] = usePersistedState<Record<string, true>>({
-    key: 'manhes_favorites',
-    fallback: {},
-  })
-  const [bookmarks, setBookmarks] = usePersistedState<Record<string, true>>({
-    key: 'manhes_bookmarks',
-    fallback: {},
-  })
-  const [latestRead, setLatestRead] = usePersistedState<Record<string, string>>({
-    key: 'manhes_latest_read',
-    fallback: {},
-  })
-  const [readProgress] = usePersistedState<Record<string, number>>({
-    key: 'manhes_read_progress',
-    fallback: {},
-  })
 
   const { data, loading, error } = useApiMangaDetail(mangaId)
   const resolvedLang = searchParams.get('tab') ?? (data?.languages?.[0]?.lang ?? null)
   const { data: chapterData, loading: chapterLoading, error: chapterError } = useApiChapterList(mangaId, resolvedLang ?? undefined)
+  const { data: trackers } = useApiTrackers(mangaId)
   const { state: refreshState, refresh } = useApiRefreshDictionary()
 
-  const isFavorite = mangaId ? !!favorites[mangaId] : false
+  // Derive latest read chapter from trackers (most recent updated_at)
+  const latestReadFromTracker = (() => {
+    if (!trackers || trackers.length === 0) return undefined
+    let latest: DomainTrackerResponse | null = null
+    for (const t of trackers) {
+      if (!latest || (t.updated_at && latest.updated_at && t.updated_at > latest.updated_at)) {
+        latest = t
+      }
+    }
+    return latest?.chapter_id
+  })()
 
-  function toggleFavorite() {
+  async function upsertTracker(chapterId: string, isRead: boolean) {
     if (!mangaId) return
-    setFavorites(prev => {
-      const { [mangaId]: _, ...rest } = prev
-      return _ !== undefined ? (rest as Record<string, true>) : { ...prev, [mangaId]: true }
-    })
-  }
-
-  function toggleBookmark(chapterId: string) {
-    if (!mangaId || !resolvedLang) return
-    const key = `${mangaId}/${resolvedLang}/${chapterId}`
-    setBookmarks(prev => {
-      const { [key]: _, ...rest } = prev
-      return _ !== undefined ? (rest as Record<string, true>) : { ...prev, [key]: true }
-    })
-  }
-
-  function markRead(chapterId: string) {
-    if (!mangaId || !resolvedLang) return
-    setLatestRead(prev => ({ ...prev, [`${mangaId}/${resolvedLang}`]: chapterId }))
+    try {
+      await mangaApi.upsertTracker({
+        manga_id: mangaId,
+        chapter_id: chapterId,
+        is_read: isRead,
+      })
+    } catch (err) {
+      console.error('Failed to upsert tracker:', err)
+    }
   }
 
   function selectLang(lang: string) {
@@ -101,8 +89,6 @@ export default function MangaPage() {
           <MangaDetailHeader
             title={data.title ?? ''}
             authors={data.authors ?? []}
-            isFavorite={isFavorite}
-            onToggleFavorite={toggleFavorite}
           />
 
           <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
@@ -159,15 +145,9 @@ export default function MangaPage() {
                   chapterData={chapterData}
                   chapterLoading={chapterLoading}
                   chapterError={chapterError}
-                  bookmarkedSet={new Set(
-                    Object.keys(bookmarks)
-                      .filter(k => k.startsWith(`${mangaId}/${resolvedLang}/`))
-                      .map(k => k.split('/')[2]),
-                  )}
-                  latestRead={latestRead[`${mangaId}/${resolvedLang}`]}
-                  getProgress={(chapter: string) => readProgress[`${mangaId}/${resolvedLang}/${chapter}`]}
-                  onToggleBookmark={toggleBookmark}
-                  onChapterClick={(chapterId: string) => markRead(chapterId)}
+                  latestRead={latestReadFromTracker}
+                  trackers={trackers ?? undefined}
+                  onUpsertTracker={upsertTracker}
                 />
               )}
             </>

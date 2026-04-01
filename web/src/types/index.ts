@@ -99,6 +99,19 @@ export interface DomainSourceStat {
   fetched_at?: string;
 }
 
+export interface DomainTrackerResponse {
+  chapter_id?: string;
+  created_at?: string;
+  id?: string;
+  is_read?: boolean;
+  manga_id?: string;
+  /** JSON string, use json.RawMessage on the domain Tracker */
+  metadata?: string;
+  updated_at?: string;
+}
+
+export type DomainUpsertTrackerRequest = object;
+
 export interface HttputilErrorResponse {
   code?: string;
   details?: string[];

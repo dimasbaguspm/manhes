@@ -169,6 +169,8 @@ func (w *Wiring) StartServer(ctx context.Context) error {
 		r.Get("/read/{chapterId}", h.readChapter)
 		r.Get("/dictionary", h.searchDictionary)
 		r.Post("/dictionary/refresh", h.refreshDictionary)
+		r.Put("/tracker", h.upsertTracker)
+		r.Get("/tracker/{mangaId}", h.getTrackersByManga)
 	})
 
 	router.Handle("/*", ui.NewHandler())

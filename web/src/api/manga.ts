@@ -1,5 +1,13 @@
 import { api } from './client'
-import type { DomainMangaListResponse, DomainMangaDetailResponse, DomainChapterListResponse, DomainChapterReadResponse } from '@/types'
+import type { DomainMangaListResponse, DomainMangaDetailResponse, DomainChapterListResponse, DomainChapterReadResponse, DomainTrackerResponse } from '@/types'
+
+export interface TrackerUpsertPayload {
+  id?: string
+  manga_id: string
+  chapter_id: string
+  is_read: boolean
+  metadata?: string // JSON string
+}
 
 // Swagger params: id, q, genre, author, state, sortBy, sortOrder, page, pageSize
 export interface ListMangaParams {
@@ -41,5 +49,15 @@ export const mangaApi = {
   // Swagger: GET /read/{chapterId}
   read(chapterId: string) {
     return api.get<DomainChapterReadResponse>(`/read/${encodeURIComponent(chapterId)}`)
+  },
+
+  // Tracker: GET /api/v1/tracker/{mangaId}
+  getTrackers(mangaId: string) {
+    return api.get<DomainTrackerResponse[]>(`/tracker/${mangaId}`)
+  },
+
+  // Tracker: PUT /api/v1/tracker
+  upsertTracker(data: TrackerUpsertPayload) {
+    return api.put<DomainTrackerResponse>('/tracker', data)
   },
 }
